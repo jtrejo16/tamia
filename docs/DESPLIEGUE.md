@@ -37,12 +37,7 @@ El panel y el worker usan el rol **limitado** `empleado_app` (el aislamiento ent
    ```
    La primera vez tarda varios minutos (construye la imagen). `migrate` debe terminar en estado *exited (0)*.
 5. **Entra a `https://TU-DOMINIO/login`.** Caddy obtiene el certificado solo (puede tardar un minuto).
-6. **Crea tu usuario operador:** regístrate en `/registro` y márcate como operador:
-   ```bash
-   docker compose -f docker-compose.prod.yml --env-file .env.production run --rm \
-     -e APP_ROLE=migrate --entrypoint sh migrate -c "cd /app/packages/db && ./node_modules/.bin/tsx src/make-operator.ts --email TU_CORREO"
-   ```
-   (usa `DATABASE_URL`, que solo recibe el servicio `migrate`).
+6. **Crea tu usuario operador:** regístrate en `/registro`, agrega `OPERATOR_EMAIL=tu@correo.com` a `.env.production` y vuelve a correr el paso 4: el trabajo de migraciones te marca como operador (es seguro repetirlo).
 
 ## Apuntar los servicios a la nueva dirección
 Cuando el dominio funcione, cambia en cada servicio la dirección del túnel por la definitiva:
@@ -77,12 +72,57 @@ En un servidor nuevo, restaura **antes** de levantar el resto: las migraciones y
 - `.env.production` con permisos `600` y fuera de git (ya está en `.gitignore`).
 - Este es un entorno **nuevo**: base de datos vacía y llaves nuevas. Cada clínica debe **reconectar** su WhatsApp, y los datos del entorno de pruebas no se copian.
 
-## Railway (adaptación, sin probar)
-La imagen es única y el rol se elige con `APP_ROLE`, así que en Railway se crean **tres servicios** desde el mismo repositorio, cada uno con la variable `RAILWAY_DOCKERFILE_PATH=deploy/Dockerfile`:
-- `web` con `APP_ROLE=web` (con dominio público), `worker` con `APP_ROLE=worker`, y `migrate` con `APP_ROLE=migrate` ejecutado una vez por despliegue.
-- Agrega **PostgreSQL con pgvector** y **Redis** como servicios. En Redis configura `maxmemory-policy noeviction` y contraseña.
-- Variables: `DATABASE_URL` (solo `migrate`), `DATABASE_APP_URL` (`web` y `worker`, con el rol `empleado_app`), `REDIS_URL`, y las del archivo `deploy/.env.production.example`.
-- **Verifica** que el usuario de la base tenga privilegios de superusuario (o `BYPASSRLS`): las funciones de seguridad dependen de eso. En una base de Railway normalmente sí; en bases administradas como Neon, Supabase o AWS RDS puede no ser así.
+## Railway (paso a paso)
+
+> No probado todavía en Railway. Los nombres de los botones pueden cambiar; la lógica no. Railway **ya no admite archivos de configuración nuevos** (`railway.json` está en desuso), así que todo se configura en su panel. Fuentes: [variables entre servicios](https://docs.railway.com/variables/reference), [Dockerfiles](https://docs.railway.com/builds/dockerfiles), [guía con pgvector](https://docs.railway.com/guides/rag-pipeline-pgvector).
+
+**0. El código debe estar en GitHub (privado).** Crea un repositorio privado vacío en GitHub y, desde la carpeta del proyecto:
+```bash
+git remote add origin https://github.com/TU_USUARIO/TU_REPO.git
+git branch -M main
+git push -u origin main
+```
+
+**1. Proyecto.** En https://railway.com crea cuenta (con GitHub) y el plan Hobby. *New Project → Deploy from GitHub repo* → elige el repositorio. Ese primer servicio será el **panel**: renómbralo **`web`**.
+
+**2. Base de datos con pgvector.** La base estándar de Railway **no trae pgvector**: usa una plantilla (*New → Template* y busca "pgvector"). Antes de aceptar, revisa que (a) incluya la extensión **vector**, (b) dé un usuario **superusuario** (el de `POSTGRES_USER`) y (c) muestre la conexión de administrador (en algunas se llama `DATABASE_ADMIN_URL`). Renombra el servicio a **`Postgres`**.
+
+**3. Redis.** *New → Database → Redis*; renómbralo **`Redis`**. Comprueba que la política de memoria sea `noeviction` (`CONFIG GET maxmemory-policy`); BullMQ la exige.
+
+**4. Dos servicios más del mismo repositorio:** *New → GitHub Repo* (el mismo) dos veces, llamados **`worker`** y **`migrate`**.
+
+**5. Variables** (pestaña *Variables* de cada servicio):
+
+| Variable | web | worker | migrate |
+|---|---|---|---|
+| `RAILWAY_DOCKERFILE_PATH` = `deploy/Dockerfile` | ✔ | ✔ | ✔ |
+| `APP_ROLE` | `web` | `worker` | `migrate` |
+| `DATABASE_APP_URL` | ✔ | ✔ | |
+| `DATABASE_URL` (superusuario) | | | ✔ |
+| `APP_DB_PASSWORD` | | | ✔ |
+| `REDIS_URL` | ✔ | ✔ | |
+| Resto de `deploy/.env.production.example` (AUTH_SECRET, ENCRYPTION_KEY, META_*, OPENROUTER_API_KEY, MERCADOPAGO_*, RETELL_*, QUEUE_PREFIX…) | ✔ | ✔ | |
+
+- `DATABASE_APP_URL` = `postgres://empleado_app:LA_CONTRASEÑA@${{Postgres.RAILWAY_PRIVATE_DOMAIN}}:5432/NOMBRE_DE_LA_BASE` (la contraseña es la misma `APP_DB_PASSWORD` de `migrate`; el nombre de la base lo ves en las variables del servicio Postgres).
+- `DATABASE_URL` de `migrate` = la conexión **de superusuario** de tu plantilla, por referencia (por ejemplo `${{Postgres.DATABASE_ADMIN_URL}}` o `${{Postgres.DATABASE_URL}}`). **No se la des a `web` ni a `worker`.**
+- `REDIS_URL` = `${{Redis.REDIS_URL}}`.
+- Usa **Shared Variables** del proyecto para no repetir los secretos en `web` y `worker`.
+- Genera los secretos nuevos con `pnpm deploy:secrets` (guarda `ENCRYPTION_KEY` en un gestor de contraseñas).
+
+**6. Ajustes por servicio** (*Settings*):
+- `web`: *Networking → Generate Domain* (HTTPS gratis en `*.up.railway.app`; después puedes conectar tu dominio) y *Healthcheck Path* = `/api/health`. Pon `PUBLIC_BASE_URL` = `https://ESE-DOMINIO`.
+- `migrate`: política de reinicio **Never** (corre una vez por despliegue y termina). Si Railway lo marca como "crashed" al terminar con éxito, es normal.
+- `worker`: sin dominio público.
+
+**7. Despliega y verifica.** En los registros de `migrate` debe salir *"Migraciones aplicadas y rol empleado_app listo."*. Si `web` o `worker` arrancaron antes y fallaron, se reintentan solos o pulsa *Redeploy*. Luego abre `https://TU-DOMINIO/api/health`: debe responder `{"ok":true}`.
+
+**8. Operador y webhooks.** Regístrate en `/registro`, define `OPERATOR_EMAIL` en `migrate` y redespliega ese servicio. Después cambia las direcciones de Meta, Facebook y Mercado Pago (tabla de la sección anterior).
+
+**Cosas a saber de Railway**
+- **Respaldos:** el servicio `backup` de este compose **no existe en Railway**. Activa los respaldos de volumen de Railway si tu plan los incluye (verifícalo) y/o programa un volcado externo; hasta entonces **no hay respaldo**. Pendiente.
+- **Orden de migraciones:** Railway no obliga a que `migrate` termine antes que `web`; en actualizaciones con cambios de base de datos, redespliega `migrate` primero.
+- **Costo:** es por uso (4 servicios siempre encendidos: panel, worker, Postgres, Redis). Revisa el consumo la primera semana.
+- **Verifica** que el usuario de la base sea superusuario (o tenga `BYPASSRLS`): las funciones de seguridad dependen de eso. Con una plantilla de Postgres propia suele serlo; en bases administradas como Neon, Supabase o AWS RDS puede no serlo.
 
 ## Pendientes antes de abrir a clientes
 Producción de Meta (verificación del negocio, app publicada), credenciales de producción de Mercado Pago, modelos de IA de pago, aviso de privacidad y contratos, monitoreo con alertas, y pruebas de carga. Ver la lista de lanzamiento.

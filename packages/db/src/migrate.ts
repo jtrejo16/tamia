@@ -21,6 +21,14 @@ try {
     `ALTER ROLE empleado_app WITH LOGIN PASSWORD '${appPassword.replaceAll("'", "''")}'`,
   );
   console.log("Migraciones aplicadas y rol empleado_app listo.");
+
+  // Alta del operador sin entrar a la base de datos: define OPERATOR_EMAIL en el servicio de migraciones y
+  // vuelve a desplegarlo. La persona debe haberse registrado antes (/registro). Es idempotente.
+  const operatorEmail = process.env.OPERATOR_EMAIL?.trim().toLowerCase();
+  if (operatorEmail) {
+    const updated = await client`update users set is_operator = true, updated_at = now() where lower(email) = ${operatorEmail} returning id`;
+    console.log(updated.length > 0 ? `Operador de la plataforma: ${operatorEmail}` : `OPERATOR_EMAIL: no existe un usuario con ese correo (registrate primero en /registro).`);
+  }
 } finally {
   await client.end();
 }
