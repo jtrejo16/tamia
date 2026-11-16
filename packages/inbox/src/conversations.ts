@@ -34,8 +34,12 @@ export interface ContactSummary {
   phone: string | null;
 }
 
+export type ChannelKind = "whatsapp" | "messenger" | "instagram";
+
 export interface ConversationSummary {
   id: string;
+  /** Por que red escribe el cliente. */
+  channel: ChannelKind;
   state: "bot" | "human" | "closed";
   assignedUserId: string | null;
   contact: ContactSummary;
@@ -63,8 +67,10 @@ export interface MessageView {
 }
 
 function contactSummary(c: typeof contacts.$inferSelect): ContactSummary {
-  const whatsappName = ((c.profile ?? {}) as Record<string, unknown>).whatsapp_name;
-  const wa = typeof whatsappName === "string" ? whatsappName : null;
+  const profile = (c.profile ?? {}) as Record<string, unknown>;
+  // Apodo con el que se presenta en su red (WhatsApp, Messenger o Instagram).
+  const nick = [profile.whatsapp_name, profile.messenger_name, profile.instagram_name].find((v) => typeof v === "string");
+  const wa = typeof nick === "string" ? nick : null;
   return {
     id: c.id,
     name: c.displayName ?? wa ?? c.phoneE164 ?? "Cliente",
@@ -102,7 +108,10 @@ const REAL_CHANNEL = ne(channels.type, "playground");
 interface Row {
   c: typeof conversations.$inferSelect;
   contact: typeof contacts.$inferSelect;
+  channelType: string;
 }
+
+const toChannelKind = (t: string): ChannelKind => (t === "messenger" || t === "instagram" ? t : "whatsapp");
 
 /** Arma los resumenes de varias conversaciones con 3 consultas (no una por conversacion). */
 async function summarize(tx: Tx, rows: Row[], now: Date): Promise<ConversationSummary[]> {
@@ -131,13 +140,14 @@ async function summarize(tx: Tx, rows: Row[], now: Date): Promise<ConversationSu
   const pendingBy = new Map(pending.map((p) => [p.id, p.n]));
   const handoffBy = new Map(open.map((h) => [h.conversationId, h]));
 
-  return rows.map(({ c, contact }): ConversationSummary => {
+  return rows.map(({ c, contact, channelType }): ConversationSummary => {
     const lm = lastBy.get(c.id);
     const handoff = handoffBy.get(c.id);
     const pendingApprovals = pendingBy.get(c.id) ?? 0;
     const customerWaiting = c.state === "human" && lm?.direction === "in";
     return {
       id: c.id,
+      channel: toChannelKind(channelType),
       state: c.state,
       assignedUserId: c.assignedUserId,
       contact: contactSummary(contact),
@@ -168,7 +178,7 @@ export async function listConversations(
 
   return withTenant(db, { tenantId: ctx.tenantId, userId: ctx.userId }, async (tx) => {
     const rows = await tx
-      .select({ c: conversations, contact: contacts })
+      .select({ c: conversations, contact: contacts, channelType: channels.type })
       .from(conversations)
       .innerJoin(contacts, eq(contacts.id, conversations.contactId))
       .innerJoin(channels, eq(channels.id, conversations.channelId))
@@ -181,6 +191,8 @@ export async function listConversations(
                 ilike(contacts.displayName, `%${search}%`),
                 ilike(contacts.phoneE164, `%${search}%`),
                 sql`${contacts.profile}->>'whatsapp_name' ilike ${`%${search}%`}`,
+                sql`${contacts.profile}->>'messenger_name' ilike ${`%${search}%`}`,
+                sql`${contacts.profile}->>'instagram_name' ilike ${`%${search}%`}`,
               )
             : undefined,
         ),
@@ -210,7 +222,7 @@ export async function getConversation(
 
   return withTenant(db, { tenantId: ctx.tenantId, userId: ctx.userId }, async (tx) => {
     const [row] = await tx
-      .select({ c: conversations, contact: contacts })
+      .select({ c: conversations, contact: contacts, channelType: channels.type })
       .from(conversations)
       .innerJoin(contacts, eq(contacts.id, conversations.contactId))
       .innerJoin(channels, eq(channels.id, conversations.channelId))

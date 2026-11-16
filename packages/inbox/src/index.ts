@@ -12,3 +12,4 @@ export * from "./billing";
 export * from "./mercadopago";
 export * from "./operator";
 export * from "./channel";
+export * from "./social-connect";

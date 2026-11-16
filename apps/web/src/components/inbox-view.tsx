@@ -10,6 +10,16 @@ import { canAct, usePanel } from "./panel-context";
 import { Alert, Avatar, Badge, Button, EmptyState, RichText, Spinner, cx } from "./ui";
 
 type Summary = Serialized<ConversationSummary>;
+
+const CHANNEL_LABEL: Record<string, { label: string; tone: "green" | "sky" | "rose" }> = {
+  whatsapp: { label: "WhatsApp", tone: "green" },
+  messenger: { label: "Messenger", tone: "sky" },
+  instagram: { label: "Instagram", tone: "rose" },
+};
+const ChannelBadge = ({ channel }: { channel: string }) => {
+  const c = CHANNEL_LABEL[channel] ?? CHANNEL_LABEL.whatsapp!;
+  return <Badge tone={c.tone}>{c.label}</Badge>;
+};
 type Detail = Serialized<ConversationDetail>;
 type Message = Serialized<MessageView>;
 type Filter = "all" | "attention" | "bot" | "human" | "closed";
@@ -124,6 +134,7 @@ export function InboxView() {
                         {c.preview || "Sin mensajes"}
                       </p>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <ChannelBadge channel={c.channel} />
                         {STATE_BADGE[c.state]}
                         {c.handoff && <Badge tone={c.handoff.urgency === "alta" ? "rose" : "amber"}>{c.handoff.urgency === "alta" ? "Urgente" : "Escalada"}</Badge>}
                         {c.pendingApprovals > 0 && <Badge tone="amber">{c.pendingApprovals} borrador{c.pendingApprovals > 1 ? "es" : ""}</Badge>}
@@ -260,11 +271,12 @@ function ConversationPane({ id, onBack }: { id: string; onBack: () => void }) {
         <div className="min-w-0 flex-1">
           <p className="truncate font-semibold text-slate-900">{c.contact.name}</p>
           <p className="truncate text-xs text-slate-500">
-            {c.contact.phone ? `+${c.contact.phone.replace(/\D/g, "")}` : "Sin teléfono"}
-            {!c.contact.hasRealName && c.contact.whatsappName ? " · nombre de WhatsApp" : ""}
+            {c.contact.phone ? `+${c.contact.phone.replace(/\D/g, "")}` : `${CHANNEL_LABEL[c.channel]?.label ?? ""} · sin teléfono`}
+            {!c.contact.hasRealName && c.contact.whatsappName ? ` · nombre de ${CHANNEL_LABEL[c.channel]?.label ?? "WhatsApp"}` : ""}
           </p>
         </div>
         <div className="hidden items-center gap-2 sm:flex">
+          <ChannelBadge channel={c.channel} />
           {STATE_BADGE[c.state]}
           {c.windowOpen ? <Badge tone="green">Ventana: {left}</Badge> : <Badge tone="slate">Ventana cerrada</Badge>}
         </div>

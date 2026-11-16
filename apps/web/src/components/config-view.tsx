@@ -7,10 +7,11 @@ import type { Serialized } from "@/lib/types";
 import { usePanel } from "./panel-context";
 import { Alert, Badge, Button, Spinner, cx } from "./ui";
 import { ChannelTab } from "./channel-view";
+import { SocialTab } from "./social-view";
 import { UsersTab } from "./users-view";
 
 type Config = Serialized<ConfigSnapshot>;
-type Tab = "negocio" | "asistente" | "servicios" | "equipo" | "horarios" | "conocimiento" | "plantillas" | "whatsapp" | "usuarios";
+type Tab = "negocio" | "asistente" | "servicios" | "equipo" | "horarios" | "conocimiento" | "plantillas" | "whatsapp" | "redes" | "usuarios";
 
 const TABS: Array<{ id: Tab; label: string; ownerOnly?: boolean }> = [
   { id: "negocio", label: "Negocio" },
@@ -20,6 +21,7 @@ const TABS: Array<{ id: Tab; label: string; ownerOnly?: boolean }> = [
   { id: "horarios", label: "Horarios" },
   { id: "conocimiento", label: "Conocimiento" },
   { id: "whatsapp", label: "WhatsApp" },
+  { id: "redes", label: "Messenger e Instagram" },
   { id: "plantillas", label: "Plantillas" },
   { id: "usuarios", label: "Usuarios", ownerOnly: true },
 ];
@@ -126,6 +128,11 @@ export function ConfigView() {
   const panel = usePanel();
   const { config, error, reload } = useConfig();
   const [tab, setTab] = useState<Tab>("negocio");
+  // Al volver de Facebook se abre directo la pestaña de redes (?tab=redes); en efecto para no desajustar la hidratación.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "redes") setTab("redes");
+  }, []);
+
   const editable = panel.role === "owner";
 
   return (
@@ -154,6 +161,8 @@ export function ConfigView() {
 
         {tab === "whatsapp" ? (
           <ChannelTab editable={editable} />
+        ) : tab === "redes" ? (
+          <SocialTab editable={editable} />
         ) : tab === "usuarios" && editable ? (
           <UsersTab />
         ) : error && !config ? (
