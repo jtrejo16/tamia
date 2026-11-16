@@ -33,3 +33,11 @@ Reversible: se desactiva SIP/llamadas en los ajustes del número. Mientras SIP e
 - Horario de llamadas y días festivos en los ajustes de Meta; los clientes pueden restringir el número con retroalimentación negativa.
 - Transferencia a una persona: no se sabe si funciona desde una llamada de WhatsApp.
 - Costos de Retell por minuto siguen aplicando.
+
+## Resultado de la prueba (noviembre 2026)
+- Se importó el número `+5219844790350` en Retell (telefonía propia) asignado al agente de Sonrisa.
+- Meta **rechazó activar llamadas** en el número (error 138015, subcódigo 2593145: «Calling APIs cannot be enabled for this phone number»). No quedó nada modificado (las llamadas siguen en `NOT_SET`).
+- Causa probable: el número está en **`TIER_250`** y Meta pide un límite de mensajería de **2000 o más**, además de elegibilidad/pago de la cuenta. Calidad `GREEN`, estado `CONNECTED`, modo `LIVE`.
+- Para reintentar: subir el límite (verificar el negocio en Meta, método de pago y volumen de conversaciones) y correr `pnpm wa:calling -- --slug sonrisa enable`. Para volver atrás: `pnpm wa:calling -- --slug sonrisa disable`.
+- Herramienta: `pnpm wa:calling -- --slug <negocio> status|enable|disable` (guarda copia en `.wa-calling-backup.json`, ignorada por git).
+- La compatibilidad de códecs (Opus de Meta vs. PCMU/PCMA/G.722 de Retell) **sigue sin probarse** porque no se llegó a esa etapa.

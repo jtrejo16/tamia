@@ -11,6 +11,7 @@
     "connect-channel": "tsx src/dev/connect-channel.ts",
     "check-channel": "tsx src/dev/check-channel.ts",
     "templates": "tsx src/dev/templates.ts",
+    "calling": "tsx src/dev/calling.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
