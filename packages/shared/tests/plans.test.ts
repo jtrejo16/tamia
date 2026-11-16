@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GRACE_DAYS, accessFor, type SubscriptionFacts } from "../src/plans";
+import { GRACE_DAYS, accessEndsAt, accessFor, type SubscriptionFacts } from "../src/plans";
 
 const NOW = new Date("2027-03-10T12:00:00Z");
 const days = (n: number) => new Date(NOW.getTime() + n * 86_400_000);
@@ -47,8 +47,22 @@ describe("accessFor: cuando responde el asistente", () => {
     expect(accessFor("active", sub({ status: "past_due", currentPeriodEnd: null }), NOW).allowed).toBe(false);
   });
 
-  it("cancelada: sin acceso; cortesia: siempre con acceso", () => {
-    expect(accessFor("active", sub({ status: "canceled" }), NOW).reason).toBe("canceled");
+  it("cancelar NO corta lo ya pagado: acceso hasta el fin del periodo (o de la prueba), despues no", () => {
+    const paid = (end: number | null, trial: number | null) => sub({ status: "canceled", currentPeriodEnd: end === null ? null : days(end), trialEndsAt: trial === null ? null : days(trial) });
+    expect(accessFor("active", paid(10, -20), NOW)).toEqual({ allowed: true, reason: "ok" }); // pago el mes: faltan 10 dias
+    expect(accessFor("active", paid(null, 5), NOW).allowed).toBe(true); // cancelo en plena prueba
+    expect(accessFor("active", paid(-1, -20), NOW)).toEqual({ allowed: false, reason: "canceled" }); // ya se acabo
+    expect(accessFor("active", paid(null, null), NOW)).toEqual({ allowed: false, reason: "canceled" });
+    expect(accessFor("pending", paid(10, null), NOW).reason).toBe("tenant_pending"); // sigue mandando la aprobacion
+    expect(accessFor("paused", paid(10, null), NOW).reason).toBe("tenant_inactive");
+  });
+
+  it("accessEndsAt: el mas tardio entre lo pagado y la prueba", () => {
+    expect(accessEndsAt(sub({ status: "canceled", currentPeriodEnd: days(10), trialEndsAt: days(-20) }))).toEqual(days(10));
+    expect(accessEndsAt(sub({ status: "canceled", currentPeriodEnd: null, trialEndsAt: null }))).toBeNull();
+  });
+
+  it("cortesia: siempre con acceso", () => {
     expect(accessFor("active", sub({ status: "comped", trialEndsAt: null }), NOW).allowed).toBe(true);
   });
 });

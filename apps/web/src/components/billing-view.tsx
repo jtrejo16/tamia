@@ -110,8 +110,13 @@ export function BillingView() {
         {sub?.status === "active" && sub.currentPeriodEnd && (
           <p className="mt-2 text-sm text-slate-600">Próximo cobro: <strong>{fmtDate(sub.currentPeriodEnd)}</strong>.</p>
         )}
+        {sub?.status === "canceled" && data.access.allowed && (
+          <p className="mt-2 text-sm text-slate-600">
+            Cancelaste tu suscripción: <strong>no se te volverá a cobrar</strong>. Tu asistente sigue funcionando hasta el <strong>{fmtDate(sub.accessEndsAt)}</strong>. Si cambias de opinión, elige un plan abajo: el primer cobro será ese día.
+          </p>
+        )}
         {comped && <p className="mt-2 text-sm text-slate-600">Tu negocio tiene una cortesía: no requiere pago.</p>}
-        {isOwner && sub?.hasCheckout && !comped && (
+        {isOwner && sub?.hasCheckout && !comped && sub.status !== "canceled" && (
           <div className="mt-4 flex flex-wrap gap-2">
             <Button variant="secondary" loading={busy === "refresh"} onClick={() => act("refresh")}>Actualizar estado</Button>
             {sub.cardAuthorized && <Button variant="danger" loading={busy === "cancel"} onClick={() => act("cancel")}>Cancelar suscripción</Button>}

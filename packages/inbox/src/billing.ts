@@ -12,6 +12,7 @@ import { MODEL_TIERS } from "@empleado/llm";
 import {
   PLANS,
   TRIAL_DAYS,
+  accessEndsAt,
   accessFor,
   assertPasswordStrength,
   hashPassword,
@@ -118,6 +119,8 @@ export interface BillingView {
     cardAuthorized: boolean;
     pendingPlan: PlanId | null;
     hasCheckout: boolean;
+    /** Hasta cuando llega lo ya pagado o la prueba (relevante si la suscripcion esta cancelada). */
+    accessEndsAt: Date | null;
   } | null;
   access: { allowed: boolean; reason: AccessReason };
   /** Solo si el dueño puede cobrar: Mercado Pago esta configurado en el servidor. */
@@ -151,6 +154,7 @@ export async function getBilling(db: Database, ctx: PanelContext, paymentsEnable
             cardAuthorized: sub.cardAuthorized,
             pendingPlan: sub.pendingPlan,
             hasCheckout: sub.mpPreapprovalId !== null,
+            accessEndsAt: accessEndsAt(subscriptionFacts(sub)),
           }
         : null,
       access: accessFor(tenant.status, sub ? subscriptionFacts(sub) : null),
@@ -199,7 +203,8 @@ export async function startCheckout(
       payerEmail: input.payerEmail,
       externalReference: ctx.tenantId,
       backUrl: input.backUrl,
-      startDate: sub.status === "trialing" ? sub.trialEndsAt : null,
+      // El primer cobro es cuando termina lo que ya tiene (prueba, o el periodo pagado si cancelo): no se cobra dos veces.
+      startDate: sub.status === "trialing" ? sub.trialEndsAt : sub.status === "canceled" ? accessEndsAt(subscriptionFacts(sub)) : null,
     });
     if (!preapproval.initPoint) return fail("provider_error");
     await billingAttachPreapproval(db, scope(ctx), {

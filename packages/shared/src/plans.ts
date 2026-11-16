@@ -42,6 +42,12 @@ export const PLANS: Record<PlanId, PlanInfo> = {
 export const PLAN_IDS = Object.keys(PLANS) as PlanId[];
 export const isPlanId = (v: unknown): v is PlanId => typeof v === "string" && v in PLANS;
 
+/** Hasta cuando llega el acceso de una suscripcion cancelada (lo ya pagado o la prueba), o null. */
+export function accessEndsAt(sub: SubscriptionFacts): Date | null {
+  const ends = [sub.currentPeriodEnd, sub.trialEndsAt].filter((d): d is Date => d !== null);
+  return ends.length > 0 ? new Date(Math.max(...ends.map((d) => d.getTime()))) : null;
+}
+
 export type SubscriptionStatus = "trialing" | "active" | "past_due" | "canceled" | "comped";
 export type TenantStatus = "active" | "paused" | "cancelled" | "pending";
 
@@ -98,7 +104,10 @@ export function accessFor(
       return within(sub.currentPeriodEnd, GRACE_DAYS)
         ? { allowed: true, reason: "ok" }
         : { allowed: false, reason: "payment_overdue" };
-    case "canceled":
-      return { allowed: false, reason: "canceled" };
+    case "canceled": {
+      // Cancelar detiene la RENOVACION, no el periodo ya pagado ni la prueba en curso: se conserva el acceso hasta ahi.
+      const ends = [sub.currentPeriodEnd, sub.trialEndsAt].filter((d): d is Date => d !== null).map((d) => d.getTime());
+      return ends.length > 0 && Math.max(...ends) > t ? { allowed: true, reason: "ok" } : { allowed: false, reason: "canceled" };
+    }
   }
 }
