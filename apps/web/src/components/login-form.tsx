@@ -14,9 +14,9 @@ export function LoginForm() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const res = await api<{ ok: true }>("/api/auth/login", { method: "POST", body: { email, password } });
+    const res = await api<{ ok: true; mustChangePassword: boolean }>("/api/auth/login", { method: "POST", body: { email, password } });
     if (res.ok) {
-      window.location.href = "/bandeja";
+      window.location.href = res.mustChangePassword ? "/cuenta?obligatorio=1" : "/bandeja";
       return;
     }
     setError(res.message);

@@ -1,7 +1,7 @@
 import "server-only";
 import type { PanelContext } from "@empleado/inbox";
 import { NextResponse, type NextRequest } from "next/server";
-import { readSession, toContext } from "./session";
+import { getValidSession } from "./session";
 
 /** Mensajes en espanol para los codigos de error del dominio. */
 const MESSAGES: Record<string, string> = {
@@ -21,6 +21,16 @@ const MESSAGES: Record<string, string> = {
   invalid_credentials: "Correo o contraseña incorrectos.",
   no_membership: "Tu usuario no pertenece a ningún negocio.",
   tenant_inactive: "El negocio está pausado. Contacta a soporte.",
+  must_change_password: "Primero debes cambiar tu contraseña temporal.",
+  wrong_password: "La contraseña actual no es correcta.",
+  weak_password: "La contraseña nueva no cumple los requisitos.",
+  same_password: "La contraseña nueva debe ser distinta a la actual.",
+  already_member: "Esa persona ya pertenece al negocio.",
+  last_owner: "Siempre debe quedar al menos un dueño en el negocio.",
+  cannot_reset:
+    "No se puede restablecer esa contraseña: la persona pertenece a otro negocio o ya no existe. Pídele que use «Cambiar mi contraseña».",
+  use_own_password: "Para tu propia cuenta usa «Cambiar mi contraseña» en Mi cuenta.",
+  email_taken: "Ese correo ya está registrado.",
   invalid: "Revisa los datos marcados.",
   no_channel: "El negocio no tiene un número de WhatsApp conectado.",
   no_token: "El número de WhatsApp todavía no tiene su clave de acceso guardada.",
@@ -41,6 +51,15 @@ const STATUS: Record<string, number> = {
   not_found: 404,
   rate_limited: 429,
   bad_request: 400,
+  must_change_password: 403,
+  wrong_password: 400,
+  weak_password: 400,
+  same_password: 400,
+  already_member: 409,
+  last_owner: 409,
+  cannot_reset: 409,
+  use_own_password: 400,
+  email_taken: 409,
   invalid: 400,
   no_channel: 409,
   no_token: 409,
@@ -89,16 +108,22 @@ export function sameOrigin(req: NextRequest): boolean {
   }
 }
 
-type Handler<P> = (req: NextRequest, ctx: PanelContext, params: P) => Promise<Response>;
+type Handler<P> = (req: NextRequest, ctx: PanelContext, params: P, session: { uid: string; tid: string; sv: number }) => Promise<Response>;
 
-/** Envuelve una ruta de la API: exige sesion y, si modifica datos, el origen correcto. */
-export function authed<P = Record<string, never>>(handler: Handler<P>) {
+/**
+ * Envuelve una ruta de la API: exige una sesion VERIFICADA en la base de datos (no revocada,
+ * usuario aun en el negocio, rol vigente) y, si modifica datos, el origen correcto.
+ * Mientras el usuario deba cambiar su contraseña temporal solo se permiten las rutas de cuenta
+ * (`allowWhileMustChange`).
+ */
+export function authed<P = Record<string, never>>(handler: Handler<P>, options: { allowWhileMustChange?: boolean } = {}) {
   return async (req: NextRequest, route: { params: Promise<P> }): Promise<Response> => {
     try {
       if (req.method !== "GET" && req.method !== "HEAD" && !sameOrigin(req)) return failure("bad_origin");
-      const session = await readSession();
-      if (!session) return failure("unauthorized");
-      return await handler(req, toContext(session), await route.params);
+      const valid = await getValidSession();
+      if (!valid) return failure("unauthorized");
+      if (valid.state.mustChangePassword && !options.allowWhileMustChange) return failure("must_change_password");
+      return await handler(req, valid.ctx, await route.params, valid.session);
     } catch (error) {
       console.error(`[api] ${req.method} ${req.nextUrl.pathname}:`, error);
       return NextResponse.json({ ok: false, error: "server_error", message: "Error interno. Intenta de nuevo." }, { status: 500 });

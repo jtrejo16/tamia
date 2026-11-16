@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   assertPasswordStrength,
@@ -10,7 +11,7 @@ import {
 
 const SECRET = "un-secreto-largo-de-al-menos-32-caracteres!!";
 const NOW = new Date("2027-03-01T12:00:00Z");
-const data = { uid: "u1", tid: "t1", role: "owner" as const };
+const data = { uid: "u1", tid: "t1", sv: 3 };
 
 describe("contraseñas (scrypt)", () => {
   it("verifica la correcta y rechaza las demás", async () => {
@@ -54,7 +55,12 @@ describe("contraseñas (scrypt)", () => {
 describe("sesion firmada", () => {
   it("acepta un token valido y devuelve a quien es", () => {
     const token = createSessionToken(data, SECRET, NOW);
-    expect(verifySessionToken(token, SECRET, NOW)).toMatchObject({ uid: "u1", tid: "t1", role: "owner" });
+    expect(verifySessionToken(token, SECRET, NOW)).toMatchObject({ uid: "u1", tid: "t1", sv: 3 });
+  });
+
+  it("la cookie no lleva el rol (se lee de la base de datos en cada peticion)", () => {
+    const body = createSessionToken(data, SECRET, NOW).split(".")[0]!;
+    expect(JSON.parse(Buffer.from(body, "base64url").toString("utf8"))).not.toHaveProperty("role");
   });
 
   it("vence a las 12 horas", () => {
@@ -68,10 +74,10 @@ describe("sesion firmada", () => {
     expect(verifySessionToken(token, SECRET, NOW)).toBeNull();
   });
 
-  it("rechaza si se altera el contenido (por ejemplo, subirse a otro negocio o a 'owner')", () => {
-    const token = createSessionToken({ ...data, role: "viewer" }, SECRET, NOW);
+  it("rechaza si se altera el contenido (por ejemplo, saltarse una revocacion o cambiar de negocio)", () => {
+    const token = createSessionToken(data, SECRET, NOW);
     const [, signature] = token.split(".");
-    const forged = Buffer.from(JSON.stringify({ uid: "u1", tid: "OTRO", role: "owner", exp: 9_999_999_999 })).toString("base64url");
+    const forged = Buffer.from(JSON.stringify({ uid: "u1", tid: "OTRO", sv: 99, exp: 9_999_999_999 })).toString("base64url");
     expect(verifySessionToken(`${forged}.${signature}`, SECRET, NOW)).toBeNull();
   });
 
@@ -82,9 +88,10 @@ describe("sesion firmada", () => {
     }
   });
 
-  it("rechaza roles inventados", () => {
-    const token = createSessionToken({ ...data, role: "superadmin" as never }, SECRET, NOW);
-    expect(verifySessionToken(token, SECRET, NOW)).toBeNull();
+  it("rechaza tokens viejos sin version de sesion", () => {
+    const body = Buffer.from(JSON.stringify({ uid: "u1", tid: "t1", exp: 9_999_999_999 })).toString("base64url");
+    const sig = createHmac("sha256", SECRET).update(body).digest("base64url");
+    expect(verifySessionToken(`${body}.${sig}`, SECRET, NOW)).toBeNull();
   });
 
   it("exige un secreto largo", () => {

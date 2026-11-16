@@ -31,14 +31,29 @@ El menú muestra insignias con lo que pide atención (conversaciones escaladas o
 
 | Rol | Puede |
 |---|---|
-| Dueño (`owner`) y recepción (`agent`) | Todo lo anterior. |
+| Dueño (`owner`) | Todo: atender, aprobar, citas, **configuración** (Ajustes) y **usuarios**. |
+| Recepción (`agent`) | Atender conversaciones, aprobar borradores, manejar citas y usar el probador. Consulta la configuración pero no la cambia. |
 | Solo lectura (`viewer`) | Ver. Las acciones están desactivadas y el servidor las rechaza. |
+
+El rol **no viaja en la cookie**: se lee de la base de datos en cada petición. Cambiar el rol o dar de baja a alguien surte efecto en su siguiente clic.
+
+## Usuarios (Ajustes → Usuarios, solo dueño)
+
+- **Agregar** a alguien: se le crea la cuenta con una **contraseña temporal** (12 caracteres al azar) que se muestra **una sola vez** y que debe cambiar al entrar; hasta entonces el panel y la API le están bloqueados. Si el correo ya tiene cuenta en otro negocio, solo se le da acceso a este (su contraseña no se toca).
+- **Cambiar rol**, **dar de baja** (pierde el acceso al instante) y **restablecer contraseña** (queda una temporal y se cierran sus sesiones).
+- Siempre debe quedar **al menos un dueño**.
+- Un dueño **no puede restablecer la contraseña de alguien que también pertenece a otro negocio** (sería tomar el control de su acceso al otro); esa persona la cambia ella misma.
+- Todo queda en la bitácora; las contraseñas nunca.
+
+**Mi cuenta** (para todos): cambiar la propia contraseña (pide la actual, mínimo 10 caracteres; cierra las demás sesiones y conserva la de este dispositivo), **cerrar sesión en todos los dispositivos** y **cambiar de negocio** si perteneces a varios.
+
+**Recuperar una contraseña olvidada:** todavía no hay recuperación por correo (requiere un servicio de envío de correos). Si un usuario la olvida, el dueño la restablece desde Usuarios; si la olvida el único dueño, se restablece desde la terminal: `pnpm set-password -- --email correo@negocio.com`.
 
 ## Seguridad (lo que ya está y lo que falta)
 
 Ya está:
 - Contraseñas con scrypt (sal propia por usuario); responder "correo desconocido" tarda lo mismo que "contraseña incorrecta".
-- Sesión en cookie firmada (HMAC-SHA256), `HttpOnly`, `SameSite=Lax`, `Secure` en producción, vence a las 12 h.
+- Sesión en cookie firmada (HMAC-SHA256), `HttpOnly`, `SameSite=Lax`, `Secure` en producción, vence a las 12 h. La cookie solo dice quién es y trae una **versión de sesión**: subirla (cambio de contraseña, restablecimiento, «cerrar en todos los dispositivos») invalida todas las cookies anteriores. Cada petición se verifica contra la base de datos (no revocada, sigue en el negocio, negocio activo, rol vigente).
 - Máximo 8 intentos de inicio de sesión por correo y 30 por IP cada 15 minutos.
 - Las peticiones que modifican datos exigen cabecera `Origin` igual al servidor (anti-CSRF).
 - Cada negocio solo ve lo suyo: la base de datos lo impone (RLS), no solo el código del panel.
@@ -48,8 +63,7 @@ Ya está:
 
 Falta (pendiente consciente):
 - Política de contenido (CSP) y HTTPS: necesarios antes de exponerlo a internet.
-- Alta de usuarios, recuperación de contraseña y cambio de negocio desde la interfaz.
-- Cierre de sesión en todos los dispositivos (hoy la cookie solo vence por tiempo).
+- Recuperación de contraseña por correo (hoy la restablece el dueño).
 - Actualización por WebSocket (hoy es consulta periódica, que se pausa con la pestaña oculta).
 - Plantillas de WhatsApp: fuera de la ventana de 24 h no se puede escribir.
 

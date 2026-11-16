@@ -7,3 +7,4 @@ export * from "./playground";
 export * from "./channel-access";
 export * from "./templates";
 export * from "./config";
+export * from "./users";

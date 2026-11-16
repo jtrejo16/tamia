@@ -6,11 +6,12 @@ import { api } from "@/lib/client";
 import type { Serialized } from "@/lib/types";
 import { usePanel } from "./panel-context";
 import { Alert, Badge, Button, Spinner, cx } from "./ui";
+import { UsersTab } from "./users-view";
 
 type Config = Serialized<ConfigSnapshot>;
-type Tab = "negocio" | "asistente" | "servicios" | "equipo" | "horarios" | "conocimiento" | "plantillas";
+type Tab = "negocio" | "asistente" | "servicios" | "equipo" | "horarios" | "conocimiento" | "plantillas" | "usuarios";
 
-const TABS: Array<{ id: Tab; label: string }> = [
+const TABS: Array<{ id: Tab; label: string; ownerOnly?: boolean }> = [
   { id: "negocio", label: "Negocio" },
   { id: "asistente", label: "Asistente" },
   { id: "servicios", label: "Servicios" },
@@ -18,6 +19,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "horarios", label: "Horarios" },
   { id: "conocimiento", label: "Conocimiento" },
   { id: "plantillas", label: "Plantillas" },
+  { id: "usuarios", label: "Usuarios", ownerOnly: true },
 ];
 
 const field =
@@ -134,7 +136,7 @@ export function ConfigView() {
         {!editable && <Alert tone="amber">Solo el dueño puede cambiar la configuración. Tú puedes consultarla.</Alert>}
 
         <div className="flex gap-1.5 overflow-x-auto pb-1">
-          {TABS.map((t) => (
+          {TABS.filter((t) => !t.ownerOnly || editable).map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
@@ -148,7 +150,9 @@ export function ConfigView() {
           ))}
         </div>
 
-        {error && !config ? (
+        {tab === "usuarios" && editable ? (
+          <UsersTab />
+        ) : error && !config ? (
           <Alert>{error}</Alert>
         ) : !config ? (
           <div className="flex justify-center p-10 text-slate-400"><Spinner /></div>

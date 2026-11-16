@@ -28,6 +28,6 @@ export async function POST(req: NextRequest) {
   const result = await authenticate(getDb(), email, password);
   if (!result.ok) return failure(result.error);
 
-  await startSession({ uid: result.login.userId, tid: result.login.tenantId, role: result.login.role });
-  return NextResponse.json({ ok: true });
+  await startSession({ uid: result.login.userId, tid: result.login.tenantId, sv: result.login.sessionVersion });
+  return NextResponse.json({ ok: true, mustChangePassword: result.login.mustChangePassword });
 }

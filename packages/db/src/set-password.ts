@@ -7,7 +7,7 @@
  * Sin --from-env la pide oculta en la terminal: no queda en el historial.
  */
 import { hashPassword } from "@empleado/shared";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createDb } from "./client";
 import { loadEnv, requireEnv } from "./env";
 import { users } from "./schema";
@@ -59,7 +59,8 @@ try {
   const hash = await hashPassword(password); // valida la longitud minima
   const updated = await db
     .update(users)
-    .set({ passwordHash: hash, updatedAt: new Date() })
+    // Subir la version cierra las sesiones abiertas con la contrasena anterior.
+    .set({ passwordHash: hash, sessionVersion: sql`${users.sessionVersion} + 1`, updatedAt: new Date() })
     .where(eq(users.email, email))
     .returning({ id: users.id });
   if (updated.length === 0) throw new Error(`No existe el usuario ${email}`);

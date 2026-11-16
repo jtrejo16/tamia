@@ -52,15 +52,48 @@ export async function withUser<T>(db: Database, userId: string, fn: (tx: Tx) => 
 }
 
 /** Busca un usuario por correo ANTES de saber quien es (funcion SECURITY DEFINER). */
-export async function authFindUser(
-  db: Database,
-  email: string,
-): Promise<{ id: string; email: string; passwordHash: string | null } | null> {
-  const rows = await db.execute<{ id: string; email: string; password_hash: string | null }>(
-    sql`select * from auth_find_user(${email})`,
-  );
+export interface AuthUser {
+  id: string;
+  email: string;
+  passwordHash: string | null;
+  sessionVersion: number;
+  mustChangePassword: boolean;
+}
+
+export async function authFindUser(db: Database, email: string): Promise<AuthUser | null> {
+  const rows = await db.execute<{
+    id: string;
+    email: string;
+    password_hash: string | null;
+    session_version: number;
+    must_change_password: boolean;
+  }>(sql`select * from auth_find_user(${email})`);
   const row = rows[0];
-  return row ? { id: row.id, email: row.email, passwordHash: row.password_hash } : null;
+  return row
+    ? {
+        id: row.id,
+        email: row.email,
+        passwordHash: row.password_hash,
+        sessionVersion: row.session_version,
+        mustChangePassword: row.must_change_password,
+      }
+    : null;
+}
+
+/** Un dueno restablece la contrasena de alguien que pertenece SOLO a su negocio (ver la migracion 0006). */
+export async function adminSetMemberPassword(
+  db: Database,
+  tenantId: string,
+  actingUserId: string,
+  memberId: string,
+  passwordHash: string,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('app.tenant_id', ${tenantId}, true)`);
+    await tx.execute(sql`select set_config('app.user_id', ${actingUserId}, true)`);
+    const rows = await tx.execute<{ ok: boolean }>(sql`select admin_set_member_password(${memberId}, ${passwordHash}) as ok`);
+    return rows[0]?.ok === true;
+  });
 }
 
 export type ReminderKind = "24h" | "2h";

@@ -6,12 +6,17 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  */
 export type SessionRole = "owner" | "agent" | "viewer";
 
+/**
+ * La cookie dice QUIEN es y para que negocio, no que permisos tiene: el rol se lee de la base
+ * de datos en cada peticion (asi un cambio de rol o una baja surten efecto al instante).
+ */
 export interface SessionPayload {
   /** id del usuario */
   uid: string;
   /** id del negocio en el que actua */
   tid: string;
-  role: SessionRole;
+  /** version de sesiones del usuario al emitirla; si ya no coincide, la sesion fue revocada */
+  sv: number;
   /** vencimiento, segundos desde epoch */
   exp: number;
 }
@@ -65,7 +70,7 @@ export function verifySessionToken(
       typeof payload.uid !== "string" ||
       typeof payload.tid !== "string" ||
       typeof payload.exp !== "number" ||
-      (payload.role !== "owner" && payload.role !== "agent" && payload.role !== "viewer")
+      !Number.isInteger(payload.sv)
     ) {
       return null;
     }

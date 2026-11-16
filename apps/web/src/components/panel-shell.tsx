@@ -97,6 +97,7 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
                 <Icon d={ICONS.out} />
               </button>
             </div>
+            <Link href="/cuenta" className="block text-center text-xs font-medium text-teal-700 hover:underline">Mi cuenta y contraseña</Link>
           </div>
         </aside>
 
@@ -106,9 +107,12 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
             <p className="truncate text-sm font-semibold text-slate-900">{info.tenantName}</p>
             {info.llmMode === "free" && <p className="text-xs text-amber-700">IA gratuita · solo pruebas</p>}
           </div>
-          <button onClick={logout} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" title="Cerrar sesión">
-            <Icon d={ICONS.out} />
-          </button>
+          <div className="flex items-center gap-1">
+            <Link href="/cuenta" className="rounded-lg px-2 py-1 text-xs font-medium text-teal-700 hover:bg-slate-100">Mi cuenta</Link>
+            <button onClick={logout} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" title="Cerrar sesión">
+              <Icon d={ICONS.out} />
+            </button>
+          </div>
         </header>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">

@@ -1,6 +1,14 @@
-import { authFindUser, memberships, tenants, users, withTenant, withUser, type Database } from "@empleado/db";
+import {
+  authFindUser,
+  memberships,
+  tenants,
+  users,
+  withTenant,
+  withUser,
+  type Database,
+} from "@empleado/db";
 import { verifyAgainstDummy, verifyPassword, type SessionRole } from "@empleado/shared";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 export interface Login {
   userId: string;
@@ -9,6 +17,9 @@ export interface Login {
   tenantId: string;
   tenantName: string;
   role: SessionRole;
+  /** Version de sesiones con la que se debe emitir la cookie. */
+  sessionVersion: number;
+  mustChangePassword: boolean;
 }
 
 export type AuthResult =
@@ -34,7 +45,7 @@ export async function authenticate(db: Database, email: string, password: string
   );
   if (rows.length === 0) return { ok: false, error: "no_membership" };
 
-  // Con varios negocios se entra al de mayor rol; el selector de negocio llega despues.
+  // Con varios negocios se entra al de mayor rol; despues se puede cambiar de negocio.
   const chosen = [...rows].sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role])[0]!;
   const [tenant] = await withTenant(db, { tenantId: chosen.tenantId, userId: user.id }, (tx) =>
     tx.select().from(tenants).where(eq(tenants.id, chosen.tenantId)),
@@ -42,7 +53,6 @@ export async function authenticate(db: Database, email: string, password: string
   if (!tenant) return { ok: false, error: "no_membership" };
   if (tenant.status !== "active") return { ok: false, error: "tenant_inactive" };
 
-  // users tiene RLS: cada quien ve su propia fila (app.user_id).
   const [self] = await withUser(db, user.id, (tx) =>
     tx.select({ name: users.name }).from(users).where(eq(users.id, user.id)),
   );
@@ -56,6 +66,63 @@ export async function authenticate(db: Database, email: string, password: string
       tenantId: tenant.id,
       tenantName: tenant.name,
       role: chosen.role,
+      sessionVersion: user.sessionVersion,
+      mustChangePassword: user.mustChangePassword,
     },
   };
+}
+
+export type SessionState =
+  | {
+      ok: true;
+      role: SessionRole;
+      userName: string | null;
+      email: string;
+      tenantName: string;
+      timezone: string;
+      mustChangePassword: boolean;
+    }
+  | { ok: false; reason: "revoked" | "no_membership" | "tenant_inactive" };
+
+/**
+ * Comprueba CONTRA LA BASE DE DATOS que una sesion sigue valida: que no se revoco (version de
+ * sesiones), que el usuario sigue en ese negocio y que el negocio esta activo. De aqui sale el
+ * rol vigente: un cambio de rol o una baja surten efecto en la siguiente peticion.
+ */
+export async function getSessionState(
+  db: Database,
+  session: { uid: string; tid: string; sv: number },
+): Promise<SessionState> {
+  return withTenant(db, { tenantId: session.tid, userId: session.uid }, async (tx) => {
+    const [user] = await tx
+      .select({
+        sv: users.sessionVersion,
+        mustChange: users.mustChangePassword,
+        name: users.name,
+        email: users.email,
+      })
+      .from(users)
+      .where(eq(users.id, session.uid));
+    if (!user || user.sv !== session.sv) return { ok: false as const, reason: "revoked" as const };
+
+    const [member] = await tx
+      .select({ role: memberships.role })
+      .from(memberships)
+      .where(and(eq(memberships.userId, session.uid), eq(memberships.tenantId, session.tid)));
+    if (!member) return { ok: false as const, reason: "no_membership" as const };
+
+    const [tenant] = await tx.select().from(tenants).where(eq(tenants.id, session.tid));
+    if (!tenant) return { ok: false as const, reason: "no_membership" as const };
+    if (tenant.status !== "active") return { ok: false as const, reason: "tenant_inactive" as const };
+
+    return {
+      ok: true as const,
+      role: member.role,
+      userName: user.name,
+      email: user.email,
+      tenantName: tenant.name,
+      timezone: tenant.timezone,
+      mustChangePassword: user.mustChange,
+    };
+  });
 }

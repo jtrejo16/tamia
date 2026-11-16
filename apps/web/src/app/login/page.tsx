@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
-import { readSession } from "@/lib/session";
+import { getValidSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
-  if (await readSession()) redirect("/bandeja");
+  // Solo se salta el login con una sesion que la base de datos confirma (no una cookie vieja o revocada).
+  if (await getValidSession()) redirect("/bandeja");
   return (
     <main className="flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-sm">

@@ -1,6 +1,8 @@
 import {
+  boolean,
   customType,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -78,6 +80,13 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   name: text("name"),
   passwordHash: text("password_hash"),
+  /**
+   * Version de las sesiones: subirla cierra TODAS las sesiones abiertas del usuario (cada
+   * cookie lleva la version con la que se emitio y se compara en cada peticion).
+   */
+  sessionVersion: integer("session_version").notNull().default(0),
+  /** Contrasena temporal: el usuario debe cambiarla antes de hacer nada mas. */
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
   ...timestamps,
 });
 

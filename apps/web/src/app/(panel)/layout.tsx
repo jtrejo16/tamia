@@ -1,31 +1,24 @@
-import { tenants, users, withTenant } from "@empleado/db";
-import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { PanelShell } from "@/components/panel-shell";
-import { getDb, llmMode } from "@/lib/server";
-import { requireContext } from "@/lib/session";
+import { llmMode } from "@/lib/server";
+import { requireValidSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function PanelLayout({ children }: { children: React.ReactNode }) {
-  const ctx = await requireContext();
-
-  const info = await withTenant(getDb(), { tenantId: ctx.tenantId, userId: ctx.userId }, async (tx) => {
-    const [tenant] = await tx.select().from(tenants).where(eq(tenants.id, ctx.tenantId));
-    const [user] = await tx.select().from(users).where(eq(users.id, ctx.userId));
-    return { tenant, user };
-  });
-  // Cookie valida pero usuario/negocio ya no existen: se limpia en vez de entrar en bucle.
-  if (!info.tenant || !info.user || info.tenant.status !== "active") redirect("/sesion-invalida");
+  // Sesion verificada contra la base de datos: revocada, dada de baja o negocio pausado => fuera.
+  const { ctx, state } = await requireValidSession();
+  // Contraseña temporal: no se entra al panel hasta cambiarla.
+  if (state.mustChangePassword) redirect("/cuenta?obligatorio=1");
 
   return (
     <PanelShell
       info={{
         userId: ctx.userId,
-        userName: info.user.name ?? info.user.email,
+        userName: state.userName ?? state.email,
         role: ctx.role,
-        tenantName: info.tenant.name,
-        timezone: info.tenant.timezone,
+        tenantName: state.tenantName,
+        timezone: state.timezone,
         llmMode: llmMode(),
       }}
     >
