@@ -17,6 +17,15 @@ const KEEP_RAW = 10;
 /** Texto de un mensaje tal como lo debe "leer" el modelo. */
 export function messageText(m: Pick<Message, "type" | "body" | "transcript">): string {
   if (m.transcript) return `[Nota de voz transcrita] ${m.transcript}`;
+  if (m.type === "template") {
+    // Plantillas (recordatorios): el cuerpo guarda JSON; el agente y el panel leen el texto renderizado.
+    try {
+      const parsed = JSON.parse(m.body ?? "") as { kind?: string; text?: string };
+      if (parsed.kind === "template" && parsed.text) return parsed.text;
+    } catch {
+      /* no era JSON: se usa tal cual */
+    }
+  }
   if (m.body) return m.body;
   switch (m.type) {
     case "image":

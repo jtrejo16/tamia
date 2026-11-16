@@ -1,4 +1,4 @@
-import { WhatsAppApiError, isWithinServiceWindow } from "@empleado/channels";
+import { WhatsAppApiError, decodeTemplateMessage, isWithinServiceWindow } from "@empleado/channels";
 import type { OutboundJobData } from "@empleado/channels";
 import {
   channels,
@@ -22,6 +22,10 @@ export interface Sender {
   sendLocation(
     to: string,
     location: { latitude: number; longitude: number; name?: string; address?: string },
+  ): Promise<{ wamid: string }>;
+  sendTemplate(
+    to: string,
+    template: { name: string; language: string; bodyParams: string[]; buttonPayloads?: string[] },
   ): Promise<{ wamid: string }>;
 }
 
@@ -66,7 +70,8 @@ export function createOutboundProcessor(deps: OutboundDeps) {
     const { tenantId, conversation, contact, access, attempt } = ctx;
     const now = deps.now?.() ?? new Date();
 
-    if (!isWithinServiceWindow(conversation.lastInboundAt, now)) {
+    // Las plantillas son justamente lo que SI se puede enviar fuera de la ventana de 24 h.
+    if (m.type !== "template" && !isWithinServiceWindow(conversation.lastInboundAt, now)) {
       await mark(tenantId, m.id, { status: "failed", error: "fuera_de_ventana_24h: solo se pueden enviar plantillas" });
       return "failed";
     }
@@ -108,6 +113,20 @@ export function createOutboundProcessor(deps: OutboundDeps) {
           const text = [loc.name, loc.address, loc.mapsUrl].filter(Boolean).join("\n");
           wamid = (await sender.sendText(to, text || "Nuestra ubicación")).wamid;
         }
+      } else if (m.type === "template") {
+        const tpl = decodeTemplateMessage(m.body);
+        if (!tpl) {
+          await mark(tenantId, m.id, { status: "failed", error: "plantilla_invalida: el contenido guardado no se puede leer" });
+          return "failed";
+        }
+        wamid = (
+          await sender.sendTemplate(to, {
+            name: tpl.name,
+            language: tpl.language,
+            bodyParams: tpl.params,
+            buttonPayloads: tpl.buttons,
+          })
+        ).wamid;
       } else {
         await mark(tenantId, m.id, { status: "failed", error: `tipo_no_soportado: ${m.type}` });
         return "failed";

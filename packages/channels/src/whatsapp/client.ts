@@ -72,6 +72,36 @@ export class WhatsAppClient {
     return this.send({ to, type: "location", location });
   }
 
+  /**
+   * Envia una plantilla aprobada. `bodyParams` llena {{1}}, {{2}}...; `buttonPayloads` son los
+   * identificadores de los botones de respuesta rapida, en orden (vuelven en la respuesta).
+   */
+  async sendTemplate(
+    to: string,
+    template: { name: string; language: string; bodyParams: string[]; buttonPayloads?: string[] },
+  ): Promise<{ wamid: string }> {
+    const components: Array<Record<string, unknown>> = [];
+    if (template.bodyParams.length > 0) {
+      components.push({
+        type: "body",
+        parameters: template.bodyParams.map((text) => ({ type: "text", text })),
+      });
+    }
+    (template.buttonPayloads ?? []).forEach((payload, index) => {
+      components.push({
+        type: "button",
+        sub_type: "quick_reply",
+        index: String(index),
+        parameters: [{ type: "payload", payload }],
+      });
+    });
+    return this.send({
+      to,
+      type: "template",
+      template: { name: template.name, language: { code: template.language }, components },
+    });
+  }
+
   /** Marca el mensaje como leido (palomitas azules). Mejor esfuerzo: no lanza. */
   async markRead(wamid: string): Promise<void> {
     try {

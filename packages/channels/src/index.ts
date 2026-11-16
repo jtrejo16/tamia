@@ -4,4 +4,6 @@ export * from "./whatsapp/payload";
 export * from "./whatsapp/webhook";
 export * from "./whatsapp/client";
 export * from "./whatsapp/window";
+export * from "./whatsapp/templates";
+export * from "./whatsapp/admin";
 export * from "./whatsapp/credentials";

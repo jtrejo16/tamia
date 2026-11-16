@@ -8,7 +8,9 @@ import { RedisLock } from "./lock";
 import { sweepStaleMessages } from "./outbox";
 import { createInboundProcessor } from "./processors/inbound";
 import { createOutboundProcessor, type Sender } from "./processors/outbound";
+import { createReminderScanner } from "./processors/reminders";
 import { createStatusProcessor } from "./processors/status";
+import { createTemplateSync } from "./processors/template-sync";
 import { RedisRateLimiter } from "./ratelimit";
 import { HEARTBEAT_INTERVAL_MS, workerBeat } from "@empleado/queue";
 import { createConnection, createEnqueuers, createQueues, type Enqueuers, type Queues } from "./queues";
@@ -101,6 +103,30 @@ export function startSystem(config: WorkerConfig, system: WorkerSystem): () => v
       .catch((e) => log("sweeper.error", { error: e instanceof Error ? e.message : String(e) }));
   }, 30_000);
 
+  // Recordatorios de cita (24 h y 2 h antes): se revisa cada minuto.
+  const scanReminders = createReminderScanner({ db: db.db, enqueueOutbound: enqueue.outbound, log });
+  let scanning = false;
+  const reminders = setInterval(() => {
+    if (scanning) return; // no encimar revisiones si una tarda
+    scanning = true;
+    scanReminders()
+      .then((r) => r.sent + r.errors > 0 && log("reminders.scan", r))
+      .catch((e) => log("reminders.scan_error", { error: e instanceof Error ? e.message : String(e) }))
+      .finally(() => {
+        scanning = false;
+      });
+  }, 60_000);
+
+  // Estado de las plantillas en Meta: al arrancar y cada 10 minutos.
+  const syncTemplatesNow = createTemplateSync({
+    db: db.db,
+    log,
+    graph: { key: config.encryptionKey, apiVersion: config.graphApiVersion, baseUrl: config.graphBaseUrl },
+  });
+  const runSync = () => syncTemplatesNow().catch((e) => log("templates.sync_error", { error: e instanceof Error ? e.message : String(e) }));
+  void runSync();
+  const templateSync = setInterval(runSync, 10 * 60_000);
+
   // Latido: el panel avisa a las personas si el worker deja de dar senales de vida.
   const beat = () => workerBeat(redis, config.queuePrefix).catch(() => {});
   void beat();
@@ -109,5 +135,7 @@ export function startSystem(config: WorkerConfig, system: WorkerSystem): () => v
   return () => {
     clearInterval(sweep);
     clearInterval(heartbeat);
+    clearInterval(reminders);
+    clearInterval(templateSync);
   };
 }

@@ -16,6 +16,7 @@
     "wa:fake-graph": "pnpm --filter @empleado/worker dev:fake-graph",
     "wa:simulate": "pnpm --filter @empleado/worker dev:simulate",
     "wa:connect-channel": "pnpm --filter @empleado/worker connect-channel",
+    "wa:templates": "pnpm --filter @empleado/worker templates",
     "chat": "pnpm --filter @empleado/agent chat",
     "web": "pnpm --filter @empleado/web dev",
     "web:build": "pnpm --filter @empleado/web build",

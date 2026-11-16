@@ -253,6 +253,9 @@ importers:
       '@empleado/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@empleado/inbox':
+        specifier: workspace:*
+        version: link:../../packages/inbox
       '@empleado/llm':
         specifier: workspace:*
         version: link:../../packages/llm

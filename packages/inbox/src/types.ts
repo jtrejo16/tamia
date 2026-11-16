@@ -7,11 +7,15 @@ export interface PanelContext {
   role: SessionRole;
 }
 
-export type PanelAction = "read" | "reply" | "approve" | "manage_appointments" | "playground";
+export type PanelAction = "read" | "reply" | "approve" | "manage_appointments" | "playground" | "configure" | "manage_users";
 
-/** "viewer" solo mira; "agent" y "owner" pueden actuar. */
+/**
+ * "viewer" solo mira; "agent" atiende (responder, aprobar, citas, probador);
+ * solo "owner" configura el negocio y administra usuarios.
+ */
 export function can(role: SessionRole, action: PanelAction): boolean {
   if (action === "read") return true;
+  if (action === "configure" || action === "manage_users") return role === "owner";
   return role === "owner" || role === "agent";
 }
 

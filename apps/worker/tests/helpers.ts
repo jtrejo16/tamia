@@ -1,7 +1,11 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { sealChannelCredentials } from "@empleado/channels";
+import { REMINDER_TEMPLATES, sealChannelCredentials } from "@empleado/channels";
 import {
   agentConfigs,
+  appointments as appointmentsTable,
+  services as servicesTable,
+  staff as staffTable,
+  templates as templatesTable,
   channels,
   contacts,
   conversations,
@@ -81,10 +85,11 @@ export class FakeLLM implements LLMProvider {
 }
 
 export interface SentCall {
-  kind: "text" | "location";
+  kind: "text" | "location" | "template";
   to: string;
   body?: string;
   location?: { latitude: number; longitude: number; name?: string; address?: string };
+  template?: { name: string; language: string; bodyParams: string[]; buttonPayloads?: string[] };
 }
 
 export class FakeSender implements Sender {
@@ -95,6 +100,11 @@ export class FakeSender implements Sender {
   async sendText(to: string, body: string) {
     this.beforeSend();
     this.calls.push({ kind: "text", to, body });
+    return { wamid: `wamid.OUT${++this.n}-${randomUUID().slice(0, 6)}` };
+  }
+  async sendTemplate(to: string, template: NonNullable<SentCall["template"]>) {
+    this.beforeSend();
+    this.calls.push({ kind: "template", to, template });
     return { wamid: `wamid.OUT${++this.n}-${randomUUID().slice(0, 6)}` };
   }
   async sendLocation(to: string, location: SentCall["location"] & object) {
@@ -182,6 +192,64 @@ export async function makeWorld(
     phone: `+${digits}`,
     waId: digits,
   };
+}
+
+/** Servicio, especialista, cita y (opcionalmente) las plantillas de recordatorio aprobadas. */
+export async function makeAppointment(
+  owner: DbHandle,
+  w: World,
+  options: {
+    startsAt: Date;
+    /** Cuando se agendo la cita (por defecto, hace mucho: asi aplica el recordatorio de 24 h). */
+    createdAt?: Date;
+    status?: "pending" | "confirmed" | "cancelled";
+    templates?: "approved" | "pending" | "none";
+    contactId?: string;
+  },
+) {
+  const { db } = owner;
+  let [service] = await db.select().from(servicesTable).where(eq(servicesTable.tenantId, w.tenantId));
+  if (!service) {
+    [service] = await db
+      .insert(servicesTable)
+      .values({ tenantId: w.tenantId, name: "Limpieza dental", durationMin: 45 })
+      .returning();
+  }
+  let [member] = await db.select().from(staffTable).where(eq(staffTable.tenantId, w.tenantId));
+  if (!member) [member] = await db.insert(staffTable).values({ tenantId: w.tenantId, name: "Dra. Ruiz" }).returning();
+
+  const [appt] = await db
+    .insert(appointmentsTable)
+    .values({
+      tenantId: w.tenantId,
+      contactId: options.contactId ?? w.contactId,
+      serviceId: service!.id,
+      staffId: member!.id,
+      startsAt: options.startsAt,
+      endsAt: new Date(options.startsAt.getTime() + 45 * 60_000),
+      status: options.status ?? "confirmed",
+      createdAt: options.createdAt ?? new Date("2027-01-01T00:00:00Z"),
+    })
+    .returning();
+
+  const mode = options.templates ?? "approved";
+  if (mode !== "none") {
+    for (const def of Object.values(REMINDER_TEMPLATES)) {
+      await db
+        .insert(templatesTable)
+        .values({
+          tenantId: w.tenantId,
+          channelId: w.channelId,
+          name: def.name,
+          language: def.language,
+          category: "utility",
+          components: [],
+          status: mode === "approved" ? "approved" : "pending",
+        })
+        .onConflictDoNothing();
+    }
+  }
+  return appt!;
 }
 
 export async function dropWorld(owner: DbHandle, w: World): Promise<void> {

@@ -10,6 +10,7 @@
     "dev:simulate": "tsx src/dev/simulate.ts",
     "connect-channel": "tsx src/dev/connect-channel.ts",
     "check-channel": "tsx src/dev/check-channel.ts",
+    "templates": "tsx src/dev/templates.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -17,6 +18,7 @@
     "@empleado/agent": "workspace:*",
     "@empleado/channels": "workspace:*",
     "@empleado/db": "workspace:*",
+    "@empleado/inbox": "workspace:*",
     "@empleado/llm": "workspace:*",
     "@empleado/queue": "workspace:*",
     "@empleado/shared": "workspace:*",

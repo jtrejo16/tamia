@@ -29,6 +29,11 @@ export function formatLocal(date: Date, timeZone: string): string {
   return `${WEEKDAYS[wd]} ${p.day} de ${MONTHS[p.month - 1]}, ${pad(p.hour)}:${pad(p.minute)}`;
 }
 
+/** "martes 2 de marzo a las 10:00": para frases como "tu cita es el ..." */
+export function formatWhen(date: Date, timeZone: string): string {
+  return formatLocal(date, timeZone).replace(", ", " a las ");
+}
+
 /** "martes 2 de marzo de 2027" */
 export function formatDateLong(date: Date, timeZone: string): string {
   const p = localParts(date, timeZone);

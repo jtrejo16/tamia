@@ -63,6 +63,26 @@ export async function authFindUser(
   return row ? { id: row.id, email: row.email, passwordHash: row.password_hash } : null;
 }
 
+export type ReminderKind = "24h" | "2h";
+
+/** Recordatorios de cita que toca enviar ahora (de todos los negocios; solo ids). */
+export async function dueReminders(
+  db: Database,
+  now: Date,
+  limit = 100,
+): Promise<Array<{ tenantId: string; appointmentId: string; kind: ReminderKind }>> {
+  const rows = await db.execute<{ tenant_id: string; appointment_id: string; kind: ReminderKind }>(
+    sql`select * from due_reminders(${now.toISOString()}::timestamptz, ${limit})`,
+  );
+  return rows.map((r) => ({ tenantId: r.tenant_id, appointmentId: r.appointment_id, kind: r.kind }));
+}
+
+/** Canales cuyas plantillas hay que sincronizar con Meta. */
+export async function channelsForTemplateSync(db: Database): Promise<Array<{ tenantId: string; channelId: string }>> {
+  const rows = await db.execute<{ tenant_id: string; channel_id: string }>(sql`select * from channels_for_template_sync()`);
+  return rows.map((r) => ({ tenantId: r.tenant_id, channelId: r.channel_id }));
+}
+
 /** Mensajes salientes que llevan mas de `olderThanSeconds` en cola (barrido de recuperacion). */
 export async function staleQueuedMessages(
   db: Database,

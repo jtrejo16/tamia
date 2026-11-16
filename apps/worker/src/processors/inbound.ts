@@ -1,10 +1,11 @@
 import { ensureConversation, runAgentTurn } from "@empleado/agent";
-import type { InboundJobData, OutboundJobData } from "@empleado/channels";
+import { parseReminderPayload, type InboundJobData, type OutboundJobData } from "@empleado/channels";
 import type { Database } from "@empleado/db";
 import type { LLMProvider } from "@empleado/llm";
 import type { Logger } from "../config";
 import type { Lock } from "../lock";
 import { enqueueQueuedMessages } from "../outbox";
+import { handleReminderReply } from "./reminders";
 import type { RateLimiter } from "../ratelimit";
 
 /** Tope por cliente: protege contra spam y contra una factura de IA descontrolada. */
@@ -55,12 +56,32 @@ export function createInboundProcessor(deps: InboundDeps) {
     // Un mensaje a la vez por conversacion: si el cliente manda tres seguidos, el agente
     // contesta en orden y ve lo que ya respondio.
     return deps.lock.withLock(`conv:${ref.conversationId}`, async () => {
+      // Botones de un recordatorio de cita: "Confirmo" se resuelve sin IA; "Reagendar" va al agente.
+      let text = message.text;
+      const reminderReply = message.type === "interactive" ? parseReminderPayload(message.replyPayload) : null;
+      if (reminderReply) {
+        const outcome = await handleReminderReply(
+          { db: deps.db, enqueueOutbound: deps.enqueueOutbound, now: deps.now, log: deps.log },
+          { tenantId, ref, message, reply: reminderReply },
+        );
+        if (outcome.handled) {
+          log("inbound.reminder_reply", { tenantId, action: reminderReply.action, queued: outcome.queued.length });
+          return {
+            status: "processed" as const,
+            action: (outcome.queued.length > 0 ? "send" : "none") as "send" | "none",
+            queued: outcome.queued,
+            escalated: false,
+          };
+        }
+        text = outcome.text;
+      }
+
       const result = await runAgentTurn({
         db: deps.db,
         llm: deps.llm,
         tenantId,
         conversationId: ref.conversationId,
-        text: message.text,
+        text,
         type: message.type,
         mediaUrl: message.mediaId ? `wa-media:${message.mediaId}` : undefined,
         externalMessageId: message.id,
