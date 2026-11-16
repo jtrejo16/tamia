@@ -284,19 +284,26 @@ export async function handleMercadoPagoEvent(
   mp: MercadoPagoClient,
   event: { type: string; dataId: string },
 ): Promise<{ applied: boolean }> {
-  let preapprovalId: string | null = null;
-  if (event.type === "subscription_preapproval" || event.type === "preapproval") {
-    preapprovalId = event.dataId;
-  } else if (event.type === "subscription_authorized_payment" || event.type === "authorized_payment") {
-    preapprovalId = (await mp.getAuthorizedPayment(event.dataId)).preapprovalId;
-  }
-  if (!preapprovalId) return { applied: false };
+  try {
+    let preapprovalId: string | null = null;
+    if (event.type === "subscription_preapproval" || event.type === "preapproval") {
+      preapprovalId = event.dataId;
+    } else if (event.type === "subscription_authorized_payment" || event.type === "authorized_payment") {
+      preapprovalId = (await mp.getAuthorizedPayment(event.dataId)).preapprovalId;
+    }
+    if (!preapprovalId) return { applied: false };
 
-  const current = await mp.getSubscription(preapprovalId);
-  const tenantId = await billingApplyPreapproval(db, {
-    preapprovalId,
-    mpStatus: current.status,
-    nextPayment: current.nextPaymentDate,
-  });
-  return { applied: tenantId !== null };
+    const current = await mp.getSubscription(preapprovalId);
+    const tenantId = await billingApplyPreapproval(db, {
+      preapprovalId,
+      mpStatus: current.status,
+      nextPayment: current.nextPaymentDate,
+    });
+    return { applied: tenantId !== null };
+  } catch (error) {
+    // Un id que Mercado Pago no conoce (por ejemplo, el aviso de "Simular", o de otra aplicacion) no es un
+    // fallo nuestro: se responde bien para que no lo reintente. Las fallas reales (5xx, red) si se propagan.
+    if (isMercadoPagoError(error) && (error.status === 404 || error.status === 400)) return { applied: false };
+    throw error;
+  }
 }

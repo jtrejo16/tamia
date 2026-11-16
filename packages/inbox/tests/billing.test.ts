@@ -253,6 +253,14 @@ describe("cobro con Mercado Pago", () => {
     expect(await handleMercadoPagoEvent(dbs.app.db, client, { type: "payment", dataId: "1" })).toEqual({ applied: false });
   });
 
+  it("un aviso simulado o de un id que Mercado Pago no conoce NO es un error (se responde bien y no se reintenta); una falla real si se propaga", async () => {
+    const respond = (status: number) =>
+      new MercadoPagoClient({ accessToken: "T", baseUrl: "https://mp.test", fetch: (async () => new Response(JSON.stringify({ message: "x" }), { status })) as typeof fetch });
+    expect(await handleMercadoPagoEvent(dbs.app.db, respond(404), { type: "subscription_preapproval", dataId: "123456" })).toEqual({ applied: false });
+    expect(await handleMercadoPagoEvent(dbs.app.db, respond(400), { type: "subscription_authorized_payment", dataId: "abc" })).toEqual({ applied: false });
+    await expect(handleMercadoPagoEvent(dbs.app.db, respond(503), { type: "subscription_preapproval", dataId: "123456" })).rejects.toThrow();
+  });
+
   it("un negocio de cortesia no cambia por avisos de cobro", async () => {
     const { ctx, email } = await newBusiness();
     const { client } = fakeMp({ status: "cancelled" });
