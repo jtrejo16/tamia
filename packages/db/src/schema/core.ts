@@ -111,6 +111,8 @@ export const subscriptions = pgTable("subscriptions", {
   mpPayerEmail: text("mp_payer_email"),
   /** El cliente ya autorizo su tarjeta en Mercado Pago (cobrara al terminar la prueba). */
   cardAuthorized: boolean("card_authorized").notNull().default(false),
+  /** Ultima vez que se confirmo su estado con Mercado Pago (conciliacion periodica). */
+  reconciledAt: timestamp("reconciled_at", { withTimezone: true }),
   ...timestamps,
 });
 

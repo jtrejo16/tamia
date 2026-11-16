@@ -46,3 +46,12 @@ El dueño pega tres datos de su cuenta de Meta: **identificador del número**, *
 - *Desconectar* borra la clave y pausa el canal.
 
 **Límite importante:** el webhook de mensajes es el de **nuestra** aplicación de Meta. Para que lleguen los mensajes de un cliente, su cuenta de WhatsApp Business debe poder suscribirse a nuestra app (por ejemplo, que la clave sea de un usuario del sistema con nuestra app asignada en su portafolio de Meta). El camino para clientes que se dan de alta solos sin ningún paso en Meta es el **registro integrado de Meta (Embedded Signup)**, que requiere ser Proveedor de Tecnología verificado; no está construido.
+
+## Conciliación automática (red de seguridad)
+Si se pierde un aviso (webhook) de Mercado Pago, el estado de una suscripción podría quedar mal (por ejemplo, un cliente que dejó de pagar y sigue con acceso). Por eso el **worker** corre cada **15 minutos** una conciliación (`reconcileSubscriptions`): revisa las suscripciones que pueden cambiar (en prueba, activas, con pago pendiente y checkouts de los últimos 3 días sin confirmar), consulta a Mercado Pago su estado **real** y lo aplica. Cada una se revisa como máximo cada hora. Si Mercado Pago falla, no se marca como revisada y se reintenta pronto; un id que Mercado Pago no conoce no es error. Corre solo si el worker tiene `MERCADOPAGO_ACCESS_TOKEN`.
+
+Manualmente: `pnpm billing:reconcile` (o `-- --all` para ignorar el descanso de una hora).
+
+**Cancelar** detiene la renovación, no lo ya pagado: el asistente sigue hasta el fin del periodo pagado o de la prueba.
+
+**Pruebas con credenciales de prueba:** Mercado Pago **no envía avisos reales** de cobros de prueba; el webhook solo se puede probar con el botón *Simular* de su panel. En producción sí llegan. La conciliación cubre el caso de que un aviso se pierda.

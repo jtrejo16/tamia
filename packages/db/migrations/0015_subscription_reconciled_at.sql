@@ -1,0 +1,1 @@
+ALTER TABLE "subscriptions" ADD COLUMN "reconciled_at" timestamp with time zone;

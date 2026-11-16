@@ -12,6 +12,7 @@
     "check-channel": "tsx src/dev/check-channel.ts",
     "templates": "tsx src/dev/templates.ts",
     "calling": "tsx src/dev/calling.ts",
+    "reconcile": "tsx src/dev/reconcile.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

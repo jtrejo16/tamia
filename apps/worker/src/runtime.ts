@@ -1,5 +1,6 @@
 import { SocialClient, WhatsAppClient } from "@empleado/channels";
 import { createDb, type DbHandle } from "@empleado/db";
+import { MercadoPagoClient, reconcileSubscriptions } from "@empleado/inbox";
 import { createLLMProvider, type LLMProvider } from "@empleado/llm";
 import type { Redis } from "ioredis";
 import { loadChannelAccess } from "./channel-access";
@@ -146,6 +147,26 @@ export function startSystem(config: WorkerConfig, system: WorkerSystem): () => v
   void runSync();
   const templateSync = setInterval(runSync, 10 * 60_000);
 
+  // Conciliacion de suscripciones: red de seguridad si se pierde un aviso (webhook) de Mercado Pago.
+  // Solo si hay clave de Mercado Pago. Cada suscripcion se revisa como maximo cada hora; la vuelta es cada 15 min.
+  const mpToken = process.env.MERCADOPAGO_ACCESS_TOKEN?.trim();
+  let reconciling = false;
+  const reconcile = () => {
+    if (!mpToken || reconciling) return;
+    reconciling = true;
+    reconcileSubscriptions(db.db, new MercadoPagoClient({ accessToken: mpToken, baseUrl: process.env.MERCADOPAGO_BASE_URL || undefined }), { log })
+      .then((r) => {
+        if (r.checked + r.errors > 0) log("billing.reconcile", { ...r });
+        if (r.changed > 0) notify();
+      })
+      .catch((e) => log("billing.reconcile_error", { error: e instanceof Error ? e.message : String(e) }))
+      .finally(() => {
+        reconciling = false;
+      });
+  };
+  const reconcileStart = setTimeout(reconcile, 30_000);
+  const reconcileTimer = setInterval(reconcile, 15 * 60_000);
+
   // Latido: el panel avisa a las personas si el worker deja de dar senales de vida.
   const beat = () => workerBeat(redis, config.queuePrefix).catch(() => {});
   void beat();
@@ -156,5 +177,7 @@ export function startSystem(config: WorkerConfig, system: WorkerSystem): () => v
     clearInterval(heartbeat);
     clearInterval(reminders);
     clearInterval(templateSync);
+    clearTimeout(reconcileStart);
+    clearInterval(reconcileTimer);
   };
 }

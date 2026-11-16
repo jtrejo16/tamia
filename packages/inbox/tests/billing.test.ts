@@ -7,6 +7,7 @@ import {
   cancelSubscription,
   getBilling,
   handleMercadoPagoEvent,
+  reconcileSubscriptions,
   operatorChangeComped,
   operatorChangeStatus,
   operatorTenants,
@@ -298,5 +299,111 @@ describe("firma de los avisos de Mercado Pago", () => {
   it("rechaza un aviso viejo (repeticion de una captura)", () => {
     const old = String(now - 11 * 60_000);
     expect(verifyMercadoPagoSignature({ secret, signatureHeader: sign("abc", "r", old), requestId: "r", dataId: "abc", now })).toBe(false);
+  });
+});
+
+describe("conciliacion periodica con Mercado Pago (red de seguridad si se pierde un aviso)", () => {
+  /** Mercado Pago controlado por id: estado, o un codigo de falla. Lo que no esta en el mapa "no existe" (404). */
+  function mpByIds(map: Record<string, { status?: string; next?: string; fail?: number }>) {
+    const asked: string[] = [];
+    const fetchFake = (async (url: string | URL | Request) => {
+      const id = new URL(String(url)).pathname.split("/").pop()!;
+      asked.push(id);
+      const r = map[id];
+      const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status });
+      if (!r) return json({ message: "not found" }, 404);
+      if (r.fail) return json({ message: "caido" }, r.fail);
+      return json({ id, status: r.status, next_payment_date: r.next ?? "2027-04-10T00:00:00.000Z" });
+    }) as typeof fetch;
+    return { client: new MercadoPagoClient({ accessToken: "T", baseUrl: "https://mp.test", fetch: fetchFake }), asked };
+  }
+  const reconcile = (client: MercadoPagoClient) => reconcileSubscriptions(dbs.app.db, client, { limit: 1000, everyMinutes: 60 });
+
+  /** Una clinica con checkout iniciado y la prueba ya terminada (el cobro seria inmediato). */
+  async function withCheckout(plan: "esencial" | "profesional" = "profesional") {
+    const { ctx, email } = await newBusiness();
+    const { client } = fakeMp();
+    await startCheckout(dbs.app.db, ctx, client, { plan, payerEmail: email, backUrl: "https://x" });
+    await dbs.owner.db.update(subscriptions).set({ trialEndsAt: new Date(Date.now() - 86_400_000) }).where(eq(subscriptions.tenantId, ctx.tenantId));
+    return { ctx, id: (await subOf(ctx.tenantId)).mpPreapprovalId! };
+  }
+
+  it("un pago que NUNCA avisó queda aplicado: tarjeta, plan elegido, activa y proximo cobro", async () => {
+    const { ctx, id } = await withCheckout("profesional");
+    expect((await subOf(ctx.tenantId)).cardAuthorized).toBe(false);
+
+    const { client } = mpByIds({ [id]: { status: "authorized", next: "2027-05-01T00:00:00.000Z" } });
+    const r = await reconcile(client);
+    expect(r.errors).toBe(0);
+    expect(r.changed).toBeGreaterThanOrEqual(1);
+
+    const sub = await subOf(ctx.tenantId);
+    expect(sub).toMatchObject({ status: "active", cardAuthorized: true, pendingPlan: null });
+    expect(sub.currentPeriodEnd!.toISOString()).toBe("2027-05-01T00:00:00.000Z");
+    expect(sub.reconciledAt).toBeTruthy();
+    const [t] = await dbs.owner.db.select().from(tenants).where(eq(tenants.id, ctx.tenantId));
+    expect(t!.plan).toBe("profesional");
+  });
+
+  it("si en Mercado Pago se cancela o se pausa por fuera, el estado se pone al dia (y se corta el acceso al vencer)", async () => {
+    const a = await withCheckout();
+    const b = await withCheckout();
+    // ambas autorizadas primero
+    await reconcile(mpByIds({ [a.id]: { status: "authorized" }, [b.id]: { status: "authorized" } }).client);
+    await dbs.owner.db.update(subscriptions).set({ reconciledAt: null }).where(eq(subscriptions.tenantId, a.ctx.tenantId));
+    await dbs.owner.db.update(subscriptions).set({ reconciledAt: null }).where(eq(subscriptions.tenantId, b.ctx.tenantId));
+
+    await reconcile(mpByIds({ [a.id]: { status: "cancelled" }, [b.id]: { status: "paused" } }).client);
+    expect((await subOf(a.ctx.tenantId)).status).toBe("canceled");
+    expect((await subOf(b.ctx.tenantId)).status).toBe("past_due");
+  });
+
+  it("rota: una suscripcion ya revisada no se vuelve a consultar dentro de la hora", async () => {
+    const { id } = await withCheckout();
+    const first = mpByIds({ [id]: { status: "authorized" } });
+    await reconcile(first.client);
+    expect(first.asked).toContain(id);
+    const second = mpByIds({ [id]: { status: "authorized" } });
+    await reconcile(second.client);
+    expect(second.asked).not.toContain(id);
+  });
+
+  it("si Mercado Pago falla (5xx) NO se marca como revisada: se reintenta en la siguiente vuelta; las demas siguen", async () => {
+    const bad = await withCheckout();
+    const good = await withCheckout();
+    const r = await reconcile(mpByIds({ [bad.id]: { fail: 503 }, [good.id]: { status: "authorized" } }).client);
+    expect(r.errors).toBeGreaterThanOrEqual(1);
+    expect((await subOf(bad.ctx.tenantId)).reconciledAt).toBeNull();
+    expect((await subOf(good.ctx.tenantId)).status).toBe("active");
+
+    const retry = mpByIds({ [bad.id]: { status: "authorized" } });
+    await reconcile(retry.client);
+    expect(retry.asked).toContain(bad.id);
+    expect((await subOf(bad.ctx.tenantId)).status).toBe("active");
+  });
+
+  it("un id que Mercado Pago no conoce no es error: se marca revisada y no se insiste", async () => {
+    const { ctx, id } = await withCheckout();
+    const r = await reconcile(mpByIds({}).client);
+    expect(r.errors).toBe(0);
+    expect((await subOf(ctx.tenantId)).reconciledAt).toBeTruthy();
+    const again = mpByIds({});
+    await reconcile(again.client);
+    expect(again.asked).not.toContain(id);
+  });
+
+  it("no consulta cortesias, canceladas ni checkouts viejos sin confirmar", async () => {
+    const comped = await withCheckout();
+    await dbs.owner.db.update(subscriptions).set({ status: "comped" }).where(eq(subscriptions.tenantId, comped.ctx.tenantId));
+    const canceled = await withCheckout();
+    await dbs.owner.db.update(subscriptions).set({ status: "canceled" }).where(eq(subscriptions.tenantId, canceled.ctx.tenantId));
+    const stale = await withCheckout();
+    await dbs.owner.db.update(subscriptions).set({ updatedAt: new Date(Date.now() - 10 * 86_400_000) }).where(eq(subscriptions.tenantId, stale.ctx.tenantId));
+
+    const { client, asked } = mpByIds({});
+    await reconcile(client);
+    expect(asked).not.toContain(comped.id);
+    expect(asked).not.toContain(canceled.id);
+    expect(asked).not.toContain(stale.id);
   });
 });

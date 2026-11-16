@@ -257,3 +257,27 @@ export async function resolveVoiceAgent(db: Database, agentId: string): Promise<
   const rows = await db.execute<{ tenant_id: string }>(sql`select tenant_id from resolve_voice_agent(${agentId})`);
   return rows[0]?.tenant_id ?? null;
 }
+
+// ---------------------------------------------------------------- conciliacion de suscripciones (migracion 0016)
+
+export interface ReconcilableSubscription {
+  preapprovalId: string;
+  status: string;
+}
+
+/** Suscripciones de Mercado Pago que toca revisar ahora (rotando: cada una a lo mas cada `everyMinutes`). */
+export async function billingDueReconciliation(db: Database, limit: number, everyMinutes: number): Promise<ReconcilableSubscription[]> {
+  const rows = await db.execute<{ preapproval_id: string; status: string }>(
+    sql`select * from billing_due_reconciliation(${limit}, make_interval(mins => ${everyMinutes}))`,
+  );
+  return rows.map((r) => ({ preapprovalId: r.preapproval_id, status: r.status }));
+}
+
+export async function billingMarkReconciled(db: Database, preapprovalId: string): Promise<void> {
+  await db.execute(sql`select billing_mark_reconciled(${preapprovalId})`);
+}
+
+export async function billingStatusOf(db: Database, preapprovalId: string): Promise<string | null> {
+  const rows = await db.execute<{ s: string | null }>(sql`select billing_status_of(${preapprovalId}) as s`);
+  return rows[0]?.s ?? null;
+}

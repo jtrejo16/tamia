@@ -2,6 +2,9 @@ import {
   auditLog,
   billingApplyPreapproval,
   billingAttachPreapproval,
+  billingDueReconciliation,
+  billingMarkReconciled,
+  billingStatusOf,
   signupCreateTenant,
   subscriptions,
   tenants,
@@ -311,4 +314,61 @@ export async function handleMercadoPagoEvent(
     if (isMercadoPagoError(error) && (error.status === 404 || error.status === 400)) return { applied: false };
     throw error;
   }
+}
+
+// ----------------------------------------------------------------- conciliacion periodica
+
+export interface ReconcileResult {
+  /** Suscripciones consultadas a Mercado Pago. */
+  checked: number;
+  /** Cuyo estado cambio al aplicar lo que dice Mercado Pago (aviso perdido o accion hecha directo en MP). */
+  changed: number;
+  /** Fallas al consultar o aplicar: no se marcan como revisadas, se reintentan en la siguiente vuelta. */
+  errors: number;
+}
+
+/**
+ * Red de seguridad contra avisos (webhooks) perdidos: revisa las suscripciones que pueden haber cambiado,
+ * consulta a Mercado Pago su estado REAL y lo aplica. Rota: cada suscripcion se revisa como maximo cada
+ * `everyMinutes`. Si Mercado Pago falla, la suscripcion NO se marca como revisada y se reintenta pronto.
+ */
+export async function reconcileSubscriptions(
+  db: Database,
+  mp: MercadoPagoClient,
+  options: { limit?: number; everyMinutes?: number; log?: (event: string, data?: Record<string, unknown>) => void } = {},
+): Promise<ReconcileResult> {
+  const log = options.log ?? (() => {});
+  const due = await billingDueReconciliation(db, options.limit ?? 100, options.everyMinutes ?? 60);
+  const result: ReconcileResult = { checked: 0, changed: 0, errors: 0 };
+
+  for (const item of due) {
+    try {
+      let current;
+      try {
+        current = await mp.getSubscription(item.preapprovalId);
+      } catch (error) {
+        // Mercado Pago no la conoce (404/400): no hay nada que aplicar; se marca revisada para no insistir cada vuelta.
+        if (isMercadoPagoError(error) && (error.status === 404 || error.status === 400)) {
+          log("billing.reconcile_unknown", { preapproval: item.preapprovalId.slice(0, 8) });
+          await billingMarkReconciled(db, item.preapprovalId);
+          result.checked++;
+          continue;
+        }
+        throw error;
+      }
+      const before = item.status;
+      await billingApplyPreapproval(db, { preapprovalId: item.preapprovalId, mpStatus: current.status, nextPayment: current.nextPaymentDate });
+      await billingMarkReconciled(db, item.preapprovalId);
+      result.checked++;
+      const after = await billingStatusOf(db, item.preapprovalId);
+      if (after !== before) {
+        result.changed++;
+        log("billing.reconcile_changed", { preapproval: item.preapprovalId.slice(0, 8), before, after, mp: current.status });
+      }
+    } catch (error) {
+      result.errors++;
+      log("billing.reconcile_error", { preapproval: item.preapprovalId.slice(0, 8), error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return result;
 }
