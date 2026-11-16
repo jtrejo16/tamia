@@ -1,0 +1,17 @@
+# Nada de esto debe entrar a la imagen (ni secretos ni peso inutil)
+node_modules
+**/node_modules
+**/.next
+.git
+.env
+.env.*
+!.env.example
+*.log
+coverage
+dist
+.wa-calling-backup.json
+docs
+evals
+whatsapp-mcp.md
+PROPUESTA-FASE1.md
+backups

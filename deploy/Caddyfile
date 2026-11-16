@@ -1,0 +1,17 @@
+# Caddy: HTTPS automatico (Let's Encrypt) para tu dominio y proxy hacia el panel.
+# DOMAIN viene del .env.production (por ejemplo: app.tuempresa.com).
+{$DOMAIN} {
+	encode zstd gzip
+
+	# El panel manda cada aviso de "tiempo real" por una conexion abierta (SSE): sin buffer.
+	reverse_proxy web:3000 {
+		flush_interval -1
+		health_uri /api/health
+		health_interval 30s
+	}
+
+	# El panel ya pone sus cabeceras de seguridad (CSP, HSTS en produccion); aqui solo lo basico del borde.
+	header {
+		-Server
+	}
+}

@@ -19,6 +19,7 @@
     "wa:templates": "pnpm --filter @empleado/worker templates",
     "wa:calling": "pnpm --filter @empleado/worker calling",
     "billing:reconcile": "pnpm --filter @empleado/worker reconcile",
+    "deploy:secrets": "node deploy/gen-secrets.mjs",
     "chat": "pnpm --filter @empleado/agent chat",
     "web": "pnpm --filter @empleado/web dev",
     "web:build": "pnpm --filter @empleado/web build",
