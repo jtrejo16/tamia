@@ -34,7 +34,7 @@ export interface ContactSummary {
   phone: string | null;
 }
 
-export type ChannelKind = "whatsapp" | "messenger" | "instagram";
+export type ChannelKind = "whatsapp" | "messenger" | "instagram" | "voice";
 
 export interface ConversationSummary {
   id: string;
@@ -111,7 +111,7 @@ interface Row {
   channelType: string;
 }
 
-const toChannelKind = (t: string): ChannelKind => (t === "messenger" || t === "instagram" ? t : "whatsapp");
+const toChannelKind = (t: string): ChannelKind => (t === "messenger" || t === "instagram" || t === "voice" ? t : "whatsapp");
 
 /** Arma los resumenes de varias conversaciones con 3 consultas (no una por conversacion). */
 async function summarize(tx: Tx, rows: Row[], now: Date): Promise<ConversationSummary[]> {
@@ -358,7 +358,7 @@ export async function closeConversation(db: Database, ctx: PanelContext, convers
   });
 }
 
-export type SendError = "forbidden" | "not_found" | "empty" | "too_long" | "not_in_control" | "window_closed";
+export type SendError = "forbidden" | "not_found" | "empty" | "too_long" | "not_in_control" | "window_closed" | "voice_channel";
 
 /**
  * Una persona responde al cliente. Solo si ELLA tiene el control (el asistente esta pausado)
@@ -381,6 +381,9 @@ export async function sendHumanMessage(
     const conv = await loadReal(tx, conversationId);
     if (!conv) return fail("not_found" as const);
     if (conv.state !== "human" || conv.assignedUserId !== ctx.userId) return fail("not_in_control" as const);
+    // Una llamada no se contesta por texto: si el cliente tiene WhatsApp se le escribe en esa conversacion.
+    const [channel] = await tx.select({ type: channels.type }).from(channels).where(eq(channels.id, conv.channelId));
+    if (channel?.type === "voice") return fail("voice_channel" as const);
     if (!isWithinServiceWindow(conv.lastInboundAt, now)) return fail("window_closed" as const);
 
     const [msg] = await tx

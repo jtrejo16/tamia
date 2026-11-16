@@ -251,3 +251,9 @@ export async function isOperator(db: Database, userId: string): Promise<boolean>
     return rows[0]?.ok === true;
   });
 }
+
+/** Negocio dueno de un agente de voz de Retell (los avisos llegan sin saber el negocio). */
+export async function resolveVoiceAgent(db: Database, agentId: string): Promise<string | null> {
+  const rows = await db.execute<{ tenant_id: string }>(sql`select tenant_id from resolve_voice_agent(${agentId})`);
+  return rows[0]?.tenant_id ?? null;
+}

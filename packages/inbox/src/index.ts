@@ -13,3 +13,6 @@ export * from "./mercadopago";
 export * from "./operator";
 export * from "./channel";
 export * from "./social-connect";
+export * from "./retell";
+export * from "./voice";
+export * from "./voice-prompt";

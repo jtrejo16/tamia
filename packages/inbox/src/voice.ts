@@ -1,0 +1,425 @@
+import { ensureConversation, loadTurnContext, runTool, toolDefinitions, type TaskState } from "@empleado/agent";
+import {
+  agentConfigs,
+  auditLog,
+  calls,
+  channels,
+  contacts,
+  conversations,
+  messages,
+  resolveVoiceAgent,
+  tenants,
+  voiceSettings,
+  withTenant,
+  type Database,
+} from "@empleado/db";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { z } from "zod";
+import { tenantAccess } from "./billing";
+import { RetellError, type RetellClient, type RetellTool } from "./retell";
+import { DEFAULT_GREETING, buildVoicePrompt, voiceToolNames } from "./voice-prompt";
+import { can, fail, type Failure, type PanelContext, type Success } from "./types";
+
+const scope = (ctx: PanelContext) => ({ tenantId: ctx.tenantId, userId: ctx.userId });
+
+// ----------------------------------------------------------------- ajustes (panel)
+
+export interface VoiceSettingsView {
+  enabled: boolean;
+  allowBooking: boolean;
+  greeting: string;
+  voiceId: string;
+  phoneNumber: string;
+  /** El agente ya existe en Retell (se sincronizo al menos una vez). */
+  synced: boolean;
+  lastSyncedAt: Date | null;
+  /** El servidor tiene la clave de Retell: sin ella no se puede sincronizar ni recibir llamadas. */
+  retellConfigured: boolean;
+}
+
+const E164 = /^\+\d{8,15}$/;
+const settingsSchema = z.object({
+  enabled: z.boolean(),
+  allowBooking: z.boolean(),
+  greeting: z.string().trim().max(300).default(""),
+  voiceId: z.string().trim().max(120).regex(/^[\w.-]*$/, "El identificador de la voz solo lleva letras, números, guion y punto").default(""),
+  phoneNumber: z.string().trim().refine((v) => v === "" || E164.test(v), "El número va con lada internacional, por ejemplo +529981234567").default(""),
+});
+
+export async function getVoiceSettings(db: Database, ctx: PanelContext, retellConfigured: boolean): Promise<VoiceSettingsView> {
+  const [row] = await withTenant(db, scope(ctx), (tx) => tx.select().from(voiceSettings));
+  return {
+    enabled: row?.enabled ?? false,
+    allowBooking: row?.allowBooking ?? false,
+    greeting: row?.greeting ?? "",
+    voiceId: row?.voiceId ?? "",
+    phoneNumber: row?.phoneNumber ?? "",
+    synced: Boolean(row?.retellAgentId),
+    lastSyncedAt: row?.lastSyncedAt ?? null,
+    retellConfigured,
+  };
+}
+
+export async function saveVoiceSettings(
+  db: Database,
+  ctx: PanelContext,
+  raw: unknown,
+): Promise<Success | Failure<"forbidden"> | (Failure<"invalid"> & { details: string[] })> {
+  if (!can(ctx.role, "configure")) return fail("forbidden");
+  const parsed = settingsSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "invalid", details: parsed.error.issues.map((i) => i.message) };
+  const v = parsed.data;
+
+  await withTenant(db, scope(ctx), async (tx) => {
+    const values = {
+      enabled: v.enabled,
+      allowBooking: v.allowBooking,
+      greeting: v.greeting || null,
+      voiceId: v.voiceId || null,
+      phoneNumber: v.phoneNumber || null,
+      updatedAt: new Date(),
+    };
+    const [existing] = await tx.select({ id: voiceSettings.id }).from(voiceSettings);
+    if (existing) await tx.update(voiceSettings).set(values).where(eq(voiceSettings.id, existing.id));
+    else await tx.insert(voiceSettings).values({ tenantId: ctx.tenantId, ...values });
+    await tx.insert(auditLog).values({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      action: "voice.settings",
+      entity: "voice_settings",
+      diff: { enabled: v.enabled, allowBooking: v.allowBooking } as never,
+    });
+  });
+  return { ok: true };
+}
+
+export type VoiceSyncError = "forbidden" | "retell_unavailable" | "missing_voice" | "retell_rejected" | "retell_down";
+
+/**
+ * Crea o actualiza en Retell el agente de este negocio con su prompt y sus funciones (que apuntan a
+ * `/api/voice/tools` del panel). Solo dueño. Despues hay que enlazar el numero de Twilio a ese agente
+ * en Retell (ver docs/VOICE.md).
+ */
+export async function syncVoiceAgent(
+  db: Database,
+  retell: RetellClient | null,
+  ctx: PanelContext,
+  input: { baseUrl: string; defaultVoiceId?: string },
+): Promise<Success<{ agentId: string }> | Failure<VoiceSyncError>> {
+  if (!can(ctx.role, "configure")) return fail("forbidden");
+  if (!retell) return fail("retell_unavailable");
+
+  const loaded = await withTenant(db, scope(ctx), async (tx) => {
+    const [tenant] = await tx.select().from(tenants).where(eq(tenants.id, ctx.tenantId));
+    const [config] = await tx.select().from(agentConfigs).where(eq(agentConfigs.tenantId, ctx.tenantId));
+    const [settings] = await tx.select().from(voiceSettings);
+    return { tenant, config, settings };
+  });
+  if (!loaded.tenant || !loaded.config || !loaded.settings) return fail("missing_voice");
+  const { tenant, config, settings } = loaded;
+  const voiceId = settings.voiceId || input.defaultVoiceId;
+  if (!voiceId) return fail("missing_voice");
+
+  const base = input.baseUrl.replace(/\/$/, "");
+  const wanted = new Set(voiceToolNames(settings.allowBooking));
+  const tools: RetellTool[] = [
+    ...toolDefinitions()
+      .filter((t) => wanted.has(t.function.name))
+      .map((t): RetellTool => ({
+        type: "custom",
+        name: t.function.name,
+        description: t.function.description,
+        url: `${base}/api/voice/tools`,
+        parameters: t.function.parameters,
+        timeout_ms: 15_000,
+        speak_during_execution: false,
+        speak_after_execution: true,
+      })),
+    { type: "end_call", name: "end_call", description: "Termina la llamada cuando el cliente ya no necesita nada más." },
+  ];
+  const llm = {
+    general_prompt: buildVoicePrompt({ tenant, config, allowBooking: settings.allowBooking }),
+    begin_message: settings.greeting || DEFAULT_GREETING(tenant.name, config.assistantName),
+    general_tools: tools,
+  };
+  const agent = {
+    agent_name: `${tenant.name} (${tenant.slug})`.slice(0, 120),
+    voice_id: voiceId,
+    language: settings.language,
+    webhook_url: `${base}/api/voice/webhook`,
+  };
+
+  try {
+    let llmId = settings.retellLlmId;
+    let agentId = settings.retellAgentId;
+    if (llmId) await retell.updateLlm(llmId, llm);
+    else llmId = (await retell.createLlm(llm)).llmId;
+    if (agentId) await retell.updateAgent(agentId, { ...agent, llm_id: llmId });
+    else agentId = (await retell.createAgent({ ...agent, llm_id: llmId })).agentId;
+
+    await withTenant(db, scope(ctx), async (tx) => {
+      await tx.update(voiceSettings).set({ retellLlmId: llmId, retellAgentId: agentId, lastSyncedAt: new Date(), updatedAt: new Date() }).where(eq(voiceSettings.id, settings.id));
+      await tx.insert(auditLog).values({ tenantId: ctx.tenantId, userId: ctx.userId, action: "voice.sync", entity: "voice_settings", entityId: agentId });
+    });
+    return { ok: true, agentId: agentId! };
+  } catch (error) {
+    if (error instanceof RetellError) return fail(error.status === 0 || error.status >= 500 ? "retell_down" : "retell_rejected");
+    throw error;
+  }
+}
+
+// ----------------------------------------------------------------- llamadas (avisos y funciones de Retell)
+
+/** Lo que usamos del objeto `call` de Retell (todo opcional: Retell puede omitir campos). */
+export interface RetellCall {
+  call_id?: string;
+  agent_id?: string;
+  direction?: string;
+  from_number?: string;
+  to_number?: string;
+  start_timestamp?: number;
+  end_timestamp?: number;
+  disconnection_reason?: string;
+  transcript_object?: Array<{ role?: string; content?: string }>;
+  call_analysis?: { call_summary?: string; user_sentiment?: string };
+}
+
+/** Telefono del que llama, en el mismo formato que los contactos; null si es anonimo o no parece telefono. */
+export function callerPhone(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const d = raw.replace(/[^\d+]/g, "");
+  return /^\+\d{8,15}$/.test(d) ? d : null;
+}
+
+/** Un mismo numero mexicano puede estar guardado con o sin el "1" despues del 52 (WhatsApp lo trae con "1"). */
+function phoneVariants(e164: string): string[] {
+  const out = new Set([e164]);
+  const m = /^\+52(1?)(\d{10})$/.exec(e164);
+  if (m) {
+    out.add(`+52${m[2]}`);
+    out.add(`+521${m[2]}`);
+  }
+  return [...out];
+}
+
+interface CallRow {
+  id: string;
+  conversationId: string | null;
+  status: string;
+  startedAt: Date | null;
+  taskState: Record<string, unknown>;
+}
+
+/** Idempotente: crea (o recupera) la llamada y la conversacion de voz del cliente. */
+async function ensureCall(db: Database, tenantId: string, call: RetellCall): Promise<CallRow | null> {
+  if (!call.call_id) return null;
+  const callId = call.call_id;
+  const found = await withTenant(db, { tenantId }, (tx) => tx.select().from(calls).where(eq(calls.retellCallId, callId)));
+  if (found[0]) return found[0] as CallRow;
+
+  // Canal de voz del negocio (uno por negocio; sin credenciales).
+  const channelId = await withTenant(db, { tenantId }, async (tx) => {
+    const [existing] = await tx.select({ id: channels.id }).from(channels).where(eq(channels.type, "voice")).limit(1);
+    if (existing) return existing.id;
+    const [settings] = await tx.select().from(voiceSettings);
+    const [created] = await tx
+      .insert(channels)
+      // El identificador del canal es unico entre TODOS los negocios: se liga al negocio, no al numero.
+      .values({ tenantId, type: "voice", externalId: `voice:${tenantId}`, displayPhone: settings?.phoneNumber ?? null })
+      .onConflictDoNothing()
+      .returning({ id: channels.id });
+    if (created) return created.id;
+    const [again] = await tx.select({ id: channels.id }).from(channels).where(eq(channels.type, "voice")).limit(1);
+    return again?.id ?? null;
+  });
+  if (!channelId) return null;
+
+  const phone = callerPhone(call.from_number);
+  let ref: { conversationId: string; contactId: string };
+  if (phone) {
+    const known = await withTenant(db, { tenantId }, (tx) =>
+      tx.select({ phone: contacts.phoneE164 }).from(contacts).where(inArray(contacts.phoneE164, phoneVariants(phone))).limit(1),
+    );
+    ref = await ensureConversation(db, { tenantId, channelId, phone: known[0]?.phone ?? phone });
+  } else {
+    // Numero oculto: un contacto por llamada, identificado por la llamada.
+    ref = await ensureConversation(db, { tenantId, channelId, identity: { externalId: `call:${callId}` } });
+  }
+
+  const startedAt = call.start_timestamp ? new Date(call.start_timestamp) : new Date();
+  await withTenant(db, { tenantId }, (tx) =>
+    tx
+      .insert(calls)
+      .values({
+        tenantId,
+        conversationId: ref.conversationId,
+        contactId: ref.contactId,
+        retellCallId: callId,
+        direction: call.direction === "outbound" ? "outbound" : "inbound",
+        fromNumber: call.from_number ?? null,
+        toNumber: call.to_number ?? null,
+        startedAt,
+      })
+      .onConflictDoNothing(),
+  );
+  const [row] = await withTenant(db, { tenantId }, (tx) => tx.select().from(calls).where(eq(calls.retellCallId, callId)));
+  return (row as CallRow | undefined) ?? null;
+}
+
+export type CallEvent = "call_started" | "call_ended" | "call_analyzed";
+
+/** Aviso de Retell (inicio, fin, analisis). Devuelve si se aplico a alguno de nuestros negocios. */
+export async function handleCallEvent(db: Database, event: { event: string; call: RetellCall }): Promise<{ handled: boolean }> {
+  const call = event.call;
+  if (!call?.agent_id || !call.call_id) return { handled: false };
+  const tenantId = await resolveVoiceAgent(db, call.agent_id);
+  if (!tenantId) return { handled: false };
+  const row = await ensureCall(db, tenantId, call);
+  if (!row) return { handled: false };
+
+  if (event.event === "call_ended") {
+    const startedAt = call.start_timestamp ? new Date(call.start_timestamp) : row.startedAt;
+    const endedAt = call.end_timestamp ? new Date(call.end_timestamp) : new Date();
+    const duration = startedAt ? Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000)) : null;
+    const reason = call.disconnection_reason ?? null;
+    await withTenant(db, { tenantId }, async (tx) => {
+      await tx
+        .update(calls)
+        .set({ status: reason?.startsWith("error") ? "failed" : "ended", endedAt, durationSeconds: duration, disconnectionReason: reason, updatedAt: new Date() })
+        .where(eq(calls.id, row.id));
+      // La transcripcion pasa a ser mensajes de la conversacion de voz: se ve en la bandeja.
+      if (row.conversationId && call.transcript_object?.length) {
+        const [conversation] = await tx.select().from(conversations).where(eq(conversations.id, row.conversationId));
+        if (conversation) {
+          const base = (startedAt ?? endedAt).getTime();
+          const turns = call.transcript_object.filter((t) => (t.content ?? "").trim() && (t.role === "user" || t.role === "agent"));
+          for (const [i, t] of turns.entries()) {
+            const inbound = t.role === "user";
+            await tx
+              .insert(messages)
+              .values({
+                tenantId,
+                conversationId: conversation.id,
+                channelId: conversation.channelId,
+                direction: inbound ? "in" : "out",
+                sender: inbound ? "contact" : "bot",
+                type: "text",
+                body: t.content!.trim(),
+                externalId: `${call.call_id}:${i}`,
+                status: inbound ? "received" : "delivered",
+                createdAt: new Date(base + i * 1000),
+              })
+              .onConflictDoNothing();
+          }
+          await tx
+            .update(conversations)
+            .set({ lastInboundAt: endedAt, lastMessageAt: endedAt, updatedAt: new Date() })
+            .where(eq(conversations.id, conversation.id));
+        }
+      }
+    });
+  } else if (event.event === "call_analyzed") {
+    await withTenant(db, { tenantId }, (tx) =>
+      tx
+        .update(calls)
+        .set({ summary: call.call_analysis?.call_summary ?? null, sentiment: call.call_analysis?.user_sentiment ?? null, updatedAt: new Date() })
+        .where(eq(calls.id, row.id)),
+    );
+  }
+  return { handled: true };
+}
+
+/** Segundos minimos entre proponer y confirmar cuando Retell no manda la transcripcion (nadie contesta antes). */
+const MIN_CONFIRM_MS = 4000;
+
+/**
+ * Una funcion que el agente de voz pidio ejecutar. Mismas herramientas y mismas reglas que WhatsApp
+ * (incluida la confirmacion impuesta por codigo): la confirmacion debe llegar en un turno POSTERIOR del
+ * cliente, que se cuenta con la transcripcion de la llamada.
+ */
+export async function runVoiceTool(
+  db: Database,
+  req: { call: RetellCall; name: string; args: unknown },
+  options: { now?: Date } = {},
+): Promise<Record<string, unknown>> {
+  const call = req.call;
+  if (!call?.agent_id || !call.call_id) return { error: "llamada_invalida" };
+  const tenantId = await resolveVoiceAgent(db, call.agent_id);
+  if (!tenantId) return { error: "agente_desconocido" };
+
+  const access = await tenantAccess(db, tenantId);
+  if (!access.allowed) {
+    return { error: "servicio_no_disponible", instruccion: "Discúlpate: el servicio no está disponible en este momento y pide que llamen más tarde. Despídete." };
+  }
+  const [settings] = await withTenant(db, { tenantId }, (tx) => tx.select().from(voiceSettings));
+  if (!settings?.enabled) return { error: "voz_desactivada" };
+  if (!voiceToolNames(settings.allowBooking).includes(req.name)) {
+    return { error: "herramienta_no_permitida", instruccion: "Esa acción no está disponible por teléfono. Pasa a una persona con escalar_a_humano." };
+  }
+
+  const row = await ensureCall(db, tenantId, call);
+  if (!row?.conversationId) return { error: "llamada_no_registrada" };
+  // Solo se ejecutan funciones de una llamada EN CURSO: una peticion repetida despues de colgar no hace nada.
+  if (row.status !== "ongoing") return { error: "llamada_terminada" };
+
+  const now = options.now ?? new Date();
+  const ctx = await loadTurnContext(db, tenantId, row.conversationId, { now, mode: "live" });
+  ctx.taskState = { ...(row.taskState as TaskState) };
+
+  // Turnos del cliente hasta ahora: base de la regla "confirmar en un turno posterior".
+  const userTurns = call.transcript_object?.filter((t) => t.role === "user").length;
+  if (userTurns !== undefined) ctx.inboundCount = userTurns;
+  else {
+    const pending = ctx.taskState.pendingAction;
+    const base = pending?.inboundCount ?? 0;
+    ctx.inboundCount = pending && now.getTime() - new Date(pending.createdAt).getTime() >= MIN_CONFIRM_MS ? base + 1 : base;
+  }
+
+  const run = await runTool(req.name, JSON.stringify(req.args ?? {}), ctx);
+
+  await withTenant(db, { tenantId }, (tx) =>
+    tx.update(calls).set({ taskState: ctx.taskState as Record<string, unknown>, updatedAt: new Date() }).where(eq(calls.id, row.id)),
+  );
+  return ctx.escalated && ctx.escalationMessage ? { ...run.result, mensaje_para_el_cliente: ctx.escalationMessage } : run.result;
+}
+
+// ----------------------------------------------------------------- panel: historial de llamadas
+
+export interface CallView {
+  id: string;
+  conversationId: string | null;
+  contactName: string;
+  phone: string | null;
+  direction: "inbound" | "outbound";
+  status: string;
+  startedAt: Date | null;
+  durationSeconds: number | null;
+  summary: string | null;
+  sentiment: string | null;
+  disconnectionReason: string | null;
+}
+
+export async function listCalls(db: Database, ctx: PanelContext, options: { limit?: number } = {}): Promise<CallView[]> {
+  const rows = await withTenant(db, scope(ctx), (tx) =>
+    tx
+      .select({ c: calls, contact: contacts })
+      .from(calls)
+      .leftJoin(contacts, eq(contacts.id, calls.contactId))
+      .where(and())
+      .orderBy(desc(calls.startedAt))
+      .limit(Math.min(options.limit ?? 50, 200)),
+  );
+  return rows.map(({ c, contact }) => ({
+    id: c.id,
+    conversationId: c.conversationId,
+    contactName: contact?.displayName ?? contact?.phoneE164 ?? "Llamada sin número",
+    phone: contact?.phoneE164 ?? callerPhone(c.fromNumber ?? undefined),
+    direction: c.direction === "outbound" ? "outbound" : "inbound",
+    status: c.status,
+    startedAt: c.startedAt,
+    durationSeconds: c.durationSeconds,
+    summary: c.summary,
+    sentiment: c.sentiment,
+    disconnectionReason: c.disconnectionReason,
+  }));
+}

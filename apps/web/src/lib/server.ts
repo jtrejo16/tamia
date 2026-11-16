@@ -12,7 +12,7 @@ import {
   type Enqueuers,
   type RateLimiter,
 } from "@empleado/queue";
-import { MercadoPagoClient } from "@empleado/inbox";
+import { MercadoPagoClient, RetellClient } from "@empleado/inbox";
 import type { Redis } from "ioredis";
 
 export function env(name: string): string {
@@ -29,6 +29,7 @@ interface Singletons {
   limiter?: RateLimiter;
   llm?: LLMProvider;
   mp?: MercadoPagoClient;
+  retell?: RetellClient;
 }
 const g = globalThis as unknown as { __empleado?: Singletons };
 const s = (): Singletons => (g.__empleado ??= {});
@@ -94,4 +95,11 @@ export function getMercadoPago(): MercadoPagoClient | null {
 /** Direccion publica del panel (para volver de Mercado Pago). */
 export function publicBaseUrl(fallback: string): string {
   return (process.env.PUBLIC_BASE_URL?.trim() || fallback).replace(/\/$/, "");
+}
+
+/** Cliente de Retell (voz), o null si el servidor no tiene su clave (entonces no hay telefonia con IA). */
+export function getRetell(): RetellClient | null {
+  const apiKey = process.env.RETELL_API_KEY?.trim();
+  if (!apiKey) return null;
+  return (s().retell ??= new RetellClient({ apiKey, baseUrl: process.env.RETELL_BASE_URL || undefined }));
 }

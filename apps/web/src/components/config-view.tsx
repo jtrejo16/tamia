@@ -8,10 +8,11 @@ import { usePanel } from "./panel-context";
 import { Alert, Badge, Button, Spinner, cx } from "./ui";
 import { ChannelTab } from "./channel-view";
 import { SocialTab } from "./social-view";
+import { VoiceTab } from "./voice-view";
 import { UsersTab } from "./users-view";
 
 type Config = Serialized<ConfigSnapshot>;
-type Tab = "negocio" | "asistente" | "servicios" | "equipo" | "horarios" | "conocimiento" | "plantillas" | "whatsapp" | "redes" | "usuarios";
+type Tab = "negocio" | "asistente" | "servicios" | "equipo" | "horarios" | "conocimiento" | "plantillas" | "whatsapp" | "redes" | "llamadas" | "usuarios";
 
 const TABS: Array<{ id: Tab; label: string; ownerOnly?: boolean }> = [
   { id: "negocio", label: "Negocio" },
@@ -22,6 +23,7 @@ const TABS: Array<{ id: Tab; label: string; ownerOnly?: boolean }> = [
   { id: "conocimiento", label: "Conocimiento" },
   { id: "whatsapp", label: "WhatsApp" },
   { id: "redes", label: "Messenger e Instagram" },
+  { id: "llamadas", label: "Llamadas" },
   { id: "plantillas", label: "Plantillas" },
   { id: "usuarios", label: "Usuarios", ownerOnly: true },
 ];
@@ -163,6 +165,8 @@ export function ConfigView() {
           <ChannelTab editable={editable} />
         ) : tab === "redes" ? (
           <SocialTab editable={editable} />
+        ) : tab === "llamadas" ? (
+          <VoiceTab editable={editable} />
         ) : tab === "usuarios" && editable ? (
           <UsersTab />
         ) : error && !config ? (

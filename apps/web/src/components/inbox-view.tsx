@@ -11,10 +11,11 @@ import { Alert, Avatar, Badge, Button, EmptyState, RichText, Spinner, cx } from 
 
 type Summary = Serialized<ConversationSummary>;
 
-const CHANNEL_LABEL: Record<string, { label: string; tone: "green" | "sky" | "rose" }> = {
+const CHANNEL_LABEL: Record<string, { label: string; tone: "green" | "sky" | "rose" | "amber" }> = {
   whatsapp: { label: "WhatsApp", tone: "green" },
   messenger: { label: "Messenger", tone: "sky" },
   instagram: { label: "Instagram", tone: "rose" },
+  voice: { label: "Llamada", tone: "amber" },
 };
 const ChannelBadge = ({ channel }: { channel: string }) => {
   const c = CHANNEL_LABEL[channel] ?? CHANNEL_LABEL.whatsapp!;

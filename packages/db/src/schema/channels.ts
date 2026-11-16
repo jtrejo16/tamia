@@ -214,3 +214,53 @@ export const conversationMemory = pgTable("conversation_memory", {
   summarizedUpToMessageId: uuid("summarized_up_to_message_id"),
   ...timestamps,
 });
+
+/**
+ * Asistente telefonico (voz) de un negocio. Retell hace la voz; aqui se guarda su configuracion
+ * y los identificadores del agente que creamos en Retell.
+ */
+export const voiceSettings = pgTable("voice_settings", {
+  id: pk(),
+  tenantId: tenantRef().unique(),
+  enabled: boolean("enabled").notNull().default(false),
+  /** false = el asistente NO agenda por telefono: toma los datos y los pasa al equipo. */
+  allowBooking: boolean("allow_booking").notNull().default(false),
+  greeting: text("greeting"),
+  voiceId: text("voice_id"),
+  language: text("language").notNull().default("es-419"),
+  /** Numero telefonico al que llaman los clientes (solo para mostrar; el enlace vive en Retell). */
+  phoneNumber: text("phone_number"),
+  retellLlmId: text("retell_llm_id"),
+  retellAgentId: text("retell_agent_id"),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  ...timestamps,
+});
+
+/** Una llamada telefonica. La transcripcion vive como mensajes de la conversacion de voz. */
+export const calls = pgTable(
+  "calls",
+  {
+    id: pk(),
+    tenantId: tenantRef(),
+    conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+    contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+    retellCallId: text("retell_call_id").notNull(),
+    direction: text("direction").notNull().default("inbound"), // inbound | outbound
+    fromNumber: text("from_number"),
+    toNumber: text("to_number"),
+    status: text("status").notNull().default("ongoing"), // ongoing | ended | failed
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    durationSeconds: integer("duration_seconds"),
+    summary: text("summary"),
+    sentiment: text("sentiment"),
+    disconnectionReason: text("disconnection_reason"),
+    /** Estado de la tarea en curso (confirmaciones pendientes), propio de ESTA llamada. */
+    taskState: jsonb("task_state").$type<Record<string, unknown>>().notNull().default({}),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("calls_retell_call_uq").on(t.retellCallId),
+    index("calls_tenant_started_idx").on(t.tenantId, t.startedAt),
+  ],
+);
