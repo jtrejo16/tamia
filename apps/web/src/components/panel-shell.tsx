@@ -56,7 +56,9 @@ function TrialNote({ iso, owner }: { iso: string; owner: boolean }) {
 export function PanelShell({ info, children }: { info: PanelInfo; children: ReactNode }) {
   const pathname = usePathname();
   useLiveUpdates();
-  const { data: counts } = usePolling<{ ok: true; attention: number; approvals: number; worker: boolean }>("/api/summary", 6000);
+  const { data: counts } = usePolling<{ ok: true; attention: number; approvals: number; worker: boolean; access?: { allowed: boolean; reason: string; trialEndsAt: string | null } }>("/api/summary", 6000);
+  // La del servidor al cargar la pagina; la del resumen la mantiene al dia sin recargar (por ejemplo, al pagar).
+  const access = counts?.access ?? info.access;
   const sendingDown = counts !== null && counts.worker === false;
 
   async function logout() {
@@ -144,16 +146,16 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
         </header>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {!info.access.allowed && (
+          {!access.allowed && (
             <div role="alert" className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-sm text-amber-900">
               <strong>El asistente está detenido.</strong>{" "}
-              {ACCESS_TEXT[info.access.reason] ?? "Revisa tu suscripción."}{" "}
-              {info.role === "owner" && info.access.reason !== "tenant_pending" && info.access.reason !== "tenant_inactive" && (
+              {ACCESS_TEXT[access.reason] ?? "Revisa tu suscripción."}{" "}
+              {info.role === "owner" && access.reason !== "tenant_pending" && access.reason !== "tenant_inactive" && (
                 <Link href="/facturacion" className="font-semibold underline">Ver planes</Link>
               )}
             </div>
           )}
-          {info.access.allowed && info.access.trialEndsAt && <TrialNote iso={info.access.trialEndsAt} owner={info.role === "owner"} />}
+          {access.allowed && access.trialEndsAt && <TrialNote iso={access.trialEndsAt} owner={info.role === "owner"} />}
           {sendingDown && (
             <div role="alert" className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-sm text-amber-900">
               <strong>El servicio de envío de WhatsApp está detenido.</strong> Lo que escribas o apruebes queda en cola y llegará al cliente cuando se reanude.
