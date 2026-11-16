@@ -14,7 +14,7 @@
     "db:migrate": "pnpm --filter @empleado/db migrate",
     "db:seed": "pnpm --filter @empleado/db seed",
     "db:generate": "pnpm --filter @empleado/db generate",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm -r --workspace-concurrency=1 --if-present test",
     "typecheck": "pnpm -r --if-present typecheck"
   }
 }
