@@ -1,4 +1,4 @@
-import { ensureConversation, loadTurnContext, runTool, toolDefinitions, type TaskState } from "@empleado/agent";
+import { ensureConversation, humanAvailability, loadTurnContext, runTool, toolDefinitions, type TaskState } from "@empleado/agent";
 import {
   agentConfigs,
   auditLog,
@@ -17,7 +17,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { tenantAccess } from "./billing";
 import { RetellError, type RetellClient, type RetellTool } from "./retell";
-import { DEFAULT_GREETING, buildVoicePrompt, voiceToolNames } from "./voice-prompt";
+import { DEFAULT_GREETING, VOICE_TRANSFER_CHECK, VOICE_TRANSFER_TOOL, buildVoicePrompt, voiceToolNames } from "./voice-prompt";
 import { can, fail, type Failure, type PanelContext, type Success } from "./types";
 
 const scope = (ctx: PanelContext) => ({ tenantId: ctx.tenantId, userId: ctx.userId });
@@ -30,6 +30,7 @@ export interface VoiceSettingsView {
   greeting: string;
   voiceId: string;
   phoneNumber: string;
+  transferNumber: string;
   /** El agente ya existe en Retell (se sincronizo al menos una vez). */
   synced: boolean;
   lastSyncedAt: Date | null;
@@ -44,6 +45,7 @@ const settingsSchema = z.object({
   greeting: z.string().trim().max(300).default(""),
   voiceId: z.string().trim().max(120).regex(/^[\w.-]*$/, "El identificador de la voz solo lleva letras, números, guion y punto").default(""),
   phoneNumber: z.string().trim().refine((v) => v === "" || E164.test(v), "El número va con lada internacional, por ejemplo +529981234567").default(""),
+  transferNumber: z.string().trim().refine((v) => v === "" || E164.test(v), "El número de recepción va con lada internacional, por ejemplo +529981234567").default(""),
 });
 
 export async function getVoiceSettings(db: Database, ctx: PanelContext, retellConfigured: boolean): Promise<VoiceSettingsView> {
@@ -54,6 +56,7 @@ export async function getVoiceSettings(db: Database, ctx: PanelContext, retellCo
     greeting: row?.greeting ?? "",
     voiceId: row?.voiceId ?? "",
     phoneNumber: row?.phoneNumber ?? "",
+    transferNumber: row?.transferNumber ?? "",
     synced: Boolean(row?.retellAgentId),
     lastSyncedAt: row?.lastSyncedAt ?? null,
     retellConfigured,
@@ -77,6 +80,7 @@ export async function saveVoiceSettings(
       greeting: v.greeting || null,
       voiceId: v.voiceId || null,
       phoneNumber: v.phoneNumber || null,
+      transferNumber: v.transferNumber || null,
       updatedAt: new Date(),
     };
     const [existing] = await tx.select({ id: voiceSettings.id }).from(voiceSettings);
@@ -121,8 +125,24 @@ export async function syncVoiceAgent(
   if (!voiceId) return fail("missing_voice");
 
   const base = input.baseUrl.replace(/\/$/, "");
-  const wanted = new Set(voiceToolNames(settings.allowBooking));
+  const transfer = Boolean(settings.transferNumber);
+  const wanted = new Set(voiceToolNames(settings.allowBooking, transfer));
   const tools: RetellTool[] = [
+    ...(transfer
+      ? [
+          // Consulta si hay alguien del equipo en horario: la transferencia solo se hace si dice que si.
+          {
+            type: "custom" as const,
+            name: VOICE_TRANSFER_CHECK,
+            description: "Consulta si hay una persona del equipo disponible ahora para recibir la llamada. Úsala SIEMPRE antes de transferir.",
+            url: `${base}/api/voice/tools`,
+            parameters: { type: "object", properties: {} },
+            timeout_ms: 15_000,
+            speak_during_execution: false,
+            speak_after_execution: true,
+          },
+        ]
+      : []),
     ...toolDefinitions()
       .filter((t) => wanted.has(t.function.name))
       .map((t): RetellTool => ({
@@ -136,9 +156,24 @@ export async function syncVoiceAgent(
         speak_after_execution: true,
       })),
     { type: "end_call", name: "end_call", description: "Termina la llamada cuando el cliente ya no necesita nada más." },
+    ...(transfer
+      ? [
+          {
+            type: "transfer_call" as const,
+            name: VOICE_TRANSFER_TOOL,
+            description: "Pasa la llamada en vivo a una persona del equipo. Solo después de que puede_transferir diga que hay alguien disponible.",
+            transfer_destination: { type: "predefined" as const, number: settings.transferNumber! },
+            // Asistida: quien contesta oye un aviso antes de que se conecte el cliente.
+            transfer_option: {
+              type: "warm_transfer",
+              public_handoff_option: { type: "static_message", message: `Te paso una llamada de un cliente de ${tenant.name} que atendió el asistente telefónico.` },
+            },
+          },
+        ]
+      : []),
   ];
   const llm = {
-    general_prompt: buildVoicePrompt({ tenant, config, allowBooking: settings.allowBooking }),
+    general_prompt: buildVoicePrompt({ tenant, config, allowBooking: settings.allowBooking, transfer }),
     begin_message: settings.greeting || DEFAULT_GREETING(tenant.name, config.assistantName),
     general_tools: tools,
   };
@@ -353,7 +388,7 @@ export async function runVoiceTool(
   }
   const [settings] = await withTenant(db, { tenantId }, (tx) => tx.select().from(voiceSettings));
   if (!settings?.enabled) return { error: "voz_desactivada" };
-  if (!voiceToolNames(settings.allowBooking).includes(req.name)) {
+  if (!voiceToolNames(settings.allowBooking, Boolean(settings.transferNumber)).includes(req.name)) {
     return { error: "herramienta_no_permitida", instruccion: "Esa acción no está disponible por teléfono. Pasa a una persona con escalar_a_humano." };
   }
 
@@ -373,6 +408,18 @@ export async function runVoiceTool(
     const pending = ctx.taskState.pendingAction;
     const base = pending?.inboundCount ?? 0;
     ctx.inboundCount = pending && now.getTime() - new Date(pending.createdAt).getTime() >= MIN_CONFIRM_MS ? base + 1 : base;
+  }
+
+  // Funcion propia de voz: ¿hay una persona en horario para recibir la transferencia?
+  if (req.name === VOICE_TRANSFER_CHECK) {
+    const a = humanAvailability(ctx.tenant.humanHours, now, ctx.tenant.timezone);
+    return a.openNow
+      ? { disponible: true, instruccion: "Sí hay alguien disponible. Avisa en una frase que lo pasas con una persona del equipo y usa transferir_a_persona." }
+      : {
+          disponible: false,
+          motivo: "fuera_de_horario",
+          instruccion: `No transfieras. Dile con calidez que ahora no hay nadie${a.nextOpenText ? ` y que atienden ${a.nextOpenText}` : ""}, y usa escalar_a_humano para dejar su recado.`,
+        };
   }
 
   const run = await runTool(req.name, JSON.stringify(req.args ?? {}), ctx);

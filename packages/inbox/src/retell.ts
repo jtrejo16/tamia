@@ -21,7 +21,10 @@ export class RetellError extends Error {
 }
 
 export interface RetellTool {
-  type: "custom" | "end_call";
+  type: "custom" | "end_call" | "transfer_call";
+  /** Solo "transfer_call". */
+  transfer_destination?: { type: "predefined"; number: string };
+  transfer_option?: Record<string, unknown>;
   name: string;
   description: string;
   /** Solo "custom": a donde llama Retell cuando el modelo usa la herramienta. */

@@ -1,0 +1,1 @@
+ALTER TABLE "voice_settings" ADD COLUMN "transfer_number" text;

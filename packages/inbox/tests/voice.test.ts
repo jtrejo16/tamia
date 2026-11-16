@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { appointments, calls, channels, contacts, conversations, handoffs, messages, subscriptions, voiceSettings } from "@empleado/db";
+import { appointments, calls, channels, contacts, conversations, handoffs, messages, subscriptions, tenants, voiceSettings } from "@empleado/db";
 import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -356,5 +356,75 @@ describe("llamadas: funciones del agente de voz", () => {
 
     await dbs.owner.db.update(voiceSettings).set({ enabled: false }).where(eq(voiceSettings.tenantId, w.tenantId));
     expect((await runVoiceTool(dbs.app.db, { call: c, name: "consultar_servicios", args: {} }, { now: NOW })).error).toBe("agente_desconocido"); // desactivado: ya no se resuelve
+  });
+});
+
+describe("transferir la llamada a una persona", () => {
+  const withTransfer = async (humanHours?: Record<string, [string, string] | null>) => {
+    const w = await world();
+    if (humanHours) await dbs.owner.db.update(tenants).set({ humanHours }).where(eq(tenants.id, w.tenantId));
+    await saveVoiceSettings(dbs.app.db, w.owner, { enabled: true, allowBooking: false, voiceId: "v1", transferNumber: "+529981110099" });
+    const { client, calls: rc } = fakeRetell();
+    const sync = await syncVoiceAgent(dbs.app.db, client, w.owner, { baseUrl: "https://panel.test" });
+    if (!sync.ok) throw new Error("sync fallo");
+    return { w, agentId: sync.agentId, rc };
+  };
+
+  it("sin numero de recepcion NO hay herramienta de transferencia ni se menciona en el prompt", async () => {
+    const { retellCalls } = await voiceWorld();
+    const llm = retellCalls.find((c) => c.path === "/create-retell-llm")!.body;
+    expect(llm.general_tools.some((t: any) => t.type === "transfer_call" || t.name === "puede_transferir")).toBe(false);
+    expect(llm.general_prompt).not.toContain("puede_transferir");
+  });
+
+  it("con numero: se crea la transferencia ASISTIDA a ese numero y la consulta de disponibilidad; el prompt exige consultarla antes", async () => {
+    const { rc } = await withTransfer();
+    const llm = rc.find((c) => c.path === "/create-retell-llm")!.body;
+    const transfer = llm.general_tools.find((t: any) => t.type === "transfer_call");
+    expect(transfer).toMatchObject({
+      name: "transferir_a_persona",
+      transfer_destination: { type: "predefined", number: "+529981110099" },
+      transfer_option: { type: "warm_transfer" },
+    });
+    expect(transfer.transfer_option.public_handoff_option.message).toContain("Clínica Panel");
+    expect(llm.general_tools.find((t: any) => t.name === "puede_transferir")).toMatchObject({ type: "custom", url: "https://panel.test/api/voice/tools" });
+    expect(llm.general_prompt).toContain("PRIMERO llama la herramienta puede_transferir");
+    expect(llm.general_prompt).toContain("NO transfieras");
+  });
+
+  it("el numero de recepcion debe ser internacional y solo lo guarda el dueño", async () => {
+    const w = await world();
+    const ok = { enabled: true, allowBooking: false, voiceId: "v", transferNumber: "9981110099" };
+    expect(await saveVoiceSettings(dbs.app.db, w.owner, ok)).toMatchObject({ ok: false, error: "invalid" });
+    expect(await saveVoiceSettings(dbs.app.db, w.agent, { ...ok, transferNumber: "+529981110099" })).toEqual({ ok: false, error: "forbidden" });
+    expect(await saveVoiceSettings(dbs.app.db, w.owner, { ...ok, transferNumber: "+529981110099" })).toEqual({ ok: true });
+    expect((await getVoiceSettings(dbs.app.db, w.owner, true)).transferNumber).toBe("+529981110099");
+  });
+
+  it("puede_transferir: SI dentro del horario humano; NO fuera de el (con cuando atienden) o sin horario configurado = siempre", async () => {
+    // horario: todos los dias de 09:00 a 19:00 (hora de Merida). NOW = lunes 12:00 en Merida.
+    const allDays = Object.fromEntries(["sun", "mon", "tue", "wed", "thu", "fri", "sat"].map((d) => [d, ["09:00", "19:00"] as [string, string]]));
+    const open = await withTransfer(allDays);
+    const c1 = call(open.agentId);
+    await handleCallEvent(dbs.app.db, { event: "call_started", call: c1 });
+    expect(await runVoiceTool(dbs.app.db, { call: c1, name: "puede_transferir", args: {} }, { now: NOW })).toMatchObject({ disponible: true });
+
+    const night = new Date("2027-03-02T05:00:00Z"); // 23:00 del lunes en Merida: cerrado
+    const r = await runVoiceTool(dbs.app.db, { call: c1, name: "puede_transferir", args: {} }, { now: night });
+    expect(r).toMatchObject({ disponible: false, motivo: "fuera_de_horario" });
+    expect(String(r.instruccion)).toContain("No transfieras");
+    expect(String(r.instruccion)).toContain("escalar_a_humano");
+
+    const noHours = await withTransfer();
+    const c2 = call(noHours.agentId);
+    await handleCallEvent(dbs.app.db, { event: "call_started", call: c2 });
+    expect(await runVoiceTool(dbs.app.db, { call: c2, name: "puede_transferir", args: {} }, { now: night })).toMatchObject({ disponible: true });
+  });
+
+  it("sin numero configurado, puede_transferir no existe para el agente", async () => {
+    const { agentId } = await voiceWorld();
+    const c = call(agentId);
+    await handleCallEvent(dbs.app.db, { event: "call_started", call: c });
+    expect((await runVoiceTool(dbs.app.db, { call: c, name: "puede_transferir", args: {} }, { now: NOW })).error).toBe("herramienta_no_permitida");
   });
 });

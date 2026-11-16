@@ -13,7 +13,15 @@ export const VOICE_READ_TOOLS = [
 /** Solo si el negocio permite agendar por telefono. */
 export const VOICE_BOOKING_TOOLS = ["crear_cita", "reprogramar_cita", "cancelar_cita"] as const;
 
-export const voiceToolNames = (allowBooking: boolean): string[] => [...VOICE_READ_TOOLS, ...(allowBooking ? VOICE_BOOKING_TOOLS : [])];
+/** Herramientas propias de voz (no existen en el agente de texto). */
+export const VOICE_TRANSFER_CHECK = "puede_transferir";
+export const VOICE_TRANSFER_TOOL = "transferir_a_persona";
+
+export const voiceToolNames = (allowBooking: boolean, transfer = false): string[] => [
+  ...VOICE_READ_TOOLS,
+  ...(allowBooking ? VOICE_BOOKING_TOOLS : []),
+  ...(transfer ? [VOICE_TRANSFER_CHECK] : []),
+];
 
 export const DEFAULT_GREETING = (businessName: string, assistantName: string) =>
   `Hola, gracias por llamar a ${businessName}. Soy ${assistantName}, la asistente virtual. ¿En qué te puedo ayudar?`;
@@ -22,8 +30,8 @@ export const DEFAULT_GREETING = (businessName: string, assistantName: string) =>
  * Prompt del agente de voz. Distinto al de WhatsApp: frases cortas, sin simbolos, horas habladas.
  * `{{current_time}}` lo rellena Retell en cada llamada.
  */
-export function buildVoicePrompt(input: { tenant: Tenant; config: AgentConfig; allowBooking: boolean }): string {
-  const { tenant, config, allowBooking } = input;
+export function buildVoicePrompt(input: { tenant: Tenant; config: AgentConfig; allowBooking: boolean; transfer?: boolean }): string {
+  const { tenant, config, allowBooking, transfer = false } = input;
   const p = tenant.profile ?? {};
   const tu = config.formality === "tu";
   const facts = [
@@ -64,7 +72,12 @@ DATOS REALES
 
 ${bookingRules}
 
-CUÁNDO PASAR A UNA PERSONA (escalar_a_humano)
+${transfer ? `HABLAR CON UNA PERSONA EN VIVO
+- Si el cliente pide hablar con una persona, o la situación lo requiere, PRIMERO llama la herramienta puede_transferir. Nunca transfieras sin consultarla.
+- Si dice que sí hay alguien disponible: avisa en una frase que lo pasas con una persona del equipo y usa transferir_a_persona.
+- Si dice que no (fuera de horario): NO transfieras. Explica con calidez cuándo atienden y usa escalar_a_humano para dejar su recado.
+
+` : ""}CUÁNDO PASAR A UNA PERSONA (escalar_a_humano)
 - Quejas, descuentos, facturas, dudas médicas o cosas que no puedas resolver con datos reales, o si el cliente lo pide.
 - Urgencias (dolor fuerte, sangrado, golpe, hinchazón): urgencia alta, y si es una emergencia de salud dile que llame al 911.
 - Después de escalar, explica con la respuesta de la herramienta cuándo lo atenderán y despídete.

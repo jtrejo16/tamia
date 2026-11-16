@@ -230,6 +230,8 @@ export const voiceSettings = pgTable("voice_settings", {
   language: text("language").notNull().default("es-419"),
   /** Numero telefonico al que llaman los clientes (solo para mostrar; el enlace vive en Retell). */
   phoneNumber: text("phone_number"),
+  /** Numero de recepcion al que se transfiere la llamada (solo en horario de atencion humana). */
+  transferNumber: text("transfer_number"),
   retellLlmId: text("retell_llm_id"),
   retellAgentId: text("retell_agent_id"),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),

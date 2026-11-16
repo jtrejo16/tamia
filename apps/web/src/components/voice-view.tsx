@@ -66,7 +66,7 @@ export function CallsView() {
 /** Pestaña "Llamadas" de Ajustes: activar el asistente telefonico y sincronizarlo con Retell. */
 export function VoiceTab({ editable }: { editable: boolean }) {
   const [s, setS] = useState<Settings | null>(null);
-  const [form, setForm] = useState({ enabled: false, allowBooking: false, greeting: "", voiceId: "", phoneNumber: "" });
+  const [form, setForm] = useState({ enabled: false, allowBooking: false, greeting: "", voiceId: "", phoneNumber: "", transferNumber: "" });
   const [notice, setNotice] = useState<{ tone: "green" | "rose" | "amber"; text: string; details?: string[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -74,7 +74,7 @@ export function VoiceTab({ editable }: { editable: boolean }) {
     const res = await api<{ ok: true; settings: Settings }>("/api/voice/settings");
     if (res.ok) {
       setS(res.settings);
-      setForm({ enabled: res.settings.enabled, allowBooking: res.settings.allowBooking, greeting: res.settings.greeting, voiceId: res.settings.voiceId, phoneNumber: res.settings.phoneNumber });
+      setForm({ enabled: res.settings.enabled, allowBooking: res.settings.allowBooking, greeting: res.settings.greeting, voiceId: res.settings.voiceId, phoneNumber: res.settings.phoneNumber, transferNumber: res.settings.transferNumber });
     } else setNotice({ tone: "rose", text: res.message });
   }, []);
   useEffect(() => {
@@ -138,6 +138,11 @@ export function VoiceTab({ editable }: { editable: boolean }) {
             <input className={cx(field, "mt-1")} disabled={disabled} value={form.phoneNumber} onChange={(e) => setForm((p) => ({ ...p, phoneNumber: e.target.value }))} placeholder="+529981234567" />
           </label>
         </div>
+
+        <label className="block text-sm font-medium text-slate-700">Número de recepción para transferir llamadas (opcional)
+          <input className={cx(field, "mt-1")} disabled={disabled} value={form.transferNumber} onChange={(e) => setForm((p) => ({ ...p, transferNumber: e.target.value }))} placeholder="+529981234567" />
+          <span className="mt-1 block text-xs font-normal text-slate-500">Si lo pones, cuando el cliente pida hablar con una persona el asistente lo transfiere a este número, <strong>solo dentro del horario de atención</strong> del negocio (Ajustes → Horarios). Fuera de horario toma recado y lo escala. Recuerda volver a sincronizar. La transferencia funciona en llamadas telefónicas, no en la llamada web de prueba.</span>
+        </label>
 
         {editable && (
           <div className="flex flex-wrap gap-2">
