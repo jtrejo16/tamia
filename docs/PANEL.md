@@ -59,10 +59,13 @@ Ya está:
 - Cada negocio solo ve lo suyo: la base de datos lo impone (RLS), no solo el código del panel.
 - Quién actúa (usuario, negocio, rol) sale de la sesión, nunca de lo que mande el navegador.
 - Cabeceras `X-Frame-Options`, `nosniff`, `Referrer-Policy` y `Cache-Control: no-store`.
+- **Política de contenido (CSP) con nonce por petición** (`apps/web/src/middleware.ts`): solo corren los scripts propios de cada respuesta (`strict-dynamic`); un script inyectado no se ejecuta. Sin `unsafe-eval` en producción; además `frame-ancestors 'none'`, `object-src 'none'`, `form-action 'self'`.
+- **HTTPS en producción**: `Strict-Transport-Security` (1 año) y `upgrade-insecure-requests` solo cuando `NODE_ENV=production`; la cookie de sesión es `Secure` en producción. En local (http) no se activan para no romper el desarrollo.
+- `AUTH_SECRET` debe tener al menos 32 caracteres (si no, el panel se niega a iniciar sesión).
 - Acciones sensibles (tomar control, cerrar, aprobar, cambiar citas) quedan en la bitácora.
 
 Falta (pendiente consciente):
-- Política de contenido (CSP) y HTTPS: necesarios antes de exponerlo a internet.
+- Poner el panel detrás de un dominio con certificado HTTPS (la CSP y HSTS ya están listos; el certificado lo da el hosting).
 - Recuperación de contraseña por correo (hoy la restablece el dueño).
 - Actualización por WebSocket (hoy es consulta periódica, que se pausa con la pestaña oculta).
 - Plantillas de WhatsApp: fuera de la ventana de 24 h no se puede escribir.
