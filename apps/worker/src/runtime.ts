@@ -12,7 +12,7 @@ import { createReminderScanner } from "./processors/reminders";
 import { createStatusProcessor } from "./processors/status";
 import { createTemplateSync } from "./processors/template-sync";
 import { RedisRateLimiter } from "./ratelimit";
-import { HEARTBEAT_INTERVAL_MS, workerBeat } from "@empleado/queue";
+import { HEARTBEAT_INTERVAL_MS, publishChange, workerBeat } from "@empleado/queue";
 import { createConnection, createEnqueuers, createQueues, type Enqueuers, type Queues } from "./queues";
 import { startWorkers, type RunningWorkers } from "./workers";
 
@@ -89,12 +89,18 @@ export function startSystem(config: WorkerConfig, system: WorkerSystem): () => v
   });
   const outbound = createOutboundProcessor({ db: db.db, key: config.encryptionKey, makeSender, lock, log });
   const status = createStatusProcessor({ db: db.db, log });
+  const notify = () => void publishChange(redis, config.queuePrefix).catch(() => {});
 
   system.workers = startWorkers({
     connection: redis,
     prefix: config.queuePrefix,
     log,
-    handlers: { inbound, outbound, status },
+    // Al terminar cada trabajo se avisa a los paneles abiertos para que se actualicen al instante.
+    handlers: {
+      inbound: (d) => inbound(d).finally(notify),
+      outbound: (d, a) => outbound(d, a).finally(notify),
+      status: (d) => status(d).finally(notify),
+    },
   });
 
   const sweep = setInterval(() => {
@@ -110,7 +116,12 @@ export function startSystem(config: WorkerConfig, system: WorkerSystem): () => v
     if (scanning) return; // no encimar revisiones si una tarda
     scanning = true;
     scanReminders()
-      .then((r) => r.sent + r.errors > 0 && log("reminders.scan", r))
+      .then((r) => {
+        if (r.sent + r.errors > 0) {
+          log("reminders.scan", r);
+          notify();
+        }
+      })
       .catch((e) => log("reminders.scan_error", { error: e instanceof Error ? e.message : String(e) }))
       .finally(() => {
         scanning = false;

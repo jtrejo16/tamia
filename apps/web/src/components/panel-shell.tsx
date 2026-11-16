@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { api, usePolling } from "@/lib/client";
+import { api, useLiveUpdates, usePolling } from "@/lib/client";
 import { PanelProvider, type PanelInfo } from "./panel-context";
 import { Badge, cx } from "./ui";
 
@@ -32,6 +32,7 @@ const ITEMS = [
 
 export function PanelShell({ info, children }: { info: PanelInfo; children: ReactNode }) {
   const pathname = usePathname();
+  useLiveUpdates();
   const { data: counts } = usePolling<{ ok: true; attention: number; approvals: number; worker: boolean }>("/api/summary", 6000);
   const sendingDown = counts !== null && counts.worker === false;
 

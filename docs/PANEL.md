@@ -67,7 +67,7 @@ Ya está:
 Falta (pendiente consciente):
 - Poner el panel detrás de un dominio con certificado HTTPS (la CSP y HSTS ya están listos; el certificado lo da el hosting).
 - Recuperación de contraseña por correo (hoy la restablece el dueño).
-- Actualización por WebSocket (hoy es consulta periódica, que se pausa con la pestaña oculta).
+- El aviso de tiempo real es global (sin distinguir negocio): con muchos negocios convendrá un canal por negocio. No lleva datos, solo dice "algo cambió".
 - Plantillas de WhatsApp: fuera de la ventana de 24 h no se puede escribir.
 
 ## Estructura
@@ -78,3 +78,7 @@ apps/web/src/components/…   pantallas
 packages/inbox/             toda la lógica del panel (probada con la base de datos real)
 packages/queue/             colas de BullMQ, límite de velocidad y latido del worker (compartidas con el worker)
 ```
+
+## Tiempo real
+
+El panel abre una conexión **SSE** (`/api/events`, requiere sesión válida) y, cuando algo cambia, vuelve a pedir lo suyo al instante: mensaje nuevo, entrega/lectura, respuesta del asistente, recordatorio enviado o una acción de otra persona del equipo. El aviso viaja por Redis (publicar/suscribir), **no lleva datos**; cada panel consulta su API normal, que ya filtra por negocio y rol. La consulta periódica sigue como respaldo si la conexión se cae (se reconecta sola). Los avisos seguidos se agrupan (300 ms).

@@ -33,6 +33,34 @@ export async function api<T extends { ok: true }>(
   }
 }
 
+const CHANGE_EVENT = "ed:change";
+
+/**
+ * Abre la conexion de tiempo real (SSE) y reparte los avisos a las pantallas. Agrupa avisos
+ * seguidos (300 ms). Al reconectar tambien avisa, por si se perdio algo. Se usa una sola vez
+ * en el armazon del panel.
+ */
+export function useLiveUpdates(): void {
+  useEffect(() => {
+    if (typeof EventSource === "undefined") return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const fire = () => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        window.dispatchEvent(new Event(CHANGE_EVENT));
+      }, 300);
+    };
+    const source = new EventSource("/api/events"); // se reconecta solo si se cae
+    source.addEventListener("change", fire);
+    source.addEventListener("ready", fire);
+    return () => {
+      source.close();
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+}
+
 /**
  * Consulta periodica: se pausa cuando la pestana no esta visible y evita peticiones
  * encimadas. `key` null = desactivada.
@@ -86,10 +114,14 @@ export function usePolling<T extends { ok: true }>(url: string | null, intervalM
       if (document.visibilityState === "visible") void load();
     }, intervalMs);
     const onVisible = () => document.visibilityState === "visible" && void load();
+    // Tiempo real: el servidor avisa que algo cambio y se recarga al instante.
+    const onChange = () => document.visibilityState === "visible" && void load();
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener(CHANGE_EVENT, onChange);
     return () => {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener(CHANGE_EVENT, onChange);
     };
   }, [url, intervalMs, load]);
 

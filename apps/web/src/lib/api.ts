@@ -1,6 +1,7 @@
 import "server-only";
 import type { PanelContext } from "@empleado/inbox";
 import { NextResponse, type NextRequest } from "next/server";
+import { notifyChange } from "./server";
 import { getValidSession } from "./session";
 
 /** Mensajes en espanol para los codigos de error del dominio. */
@@ -123,7 +124,10 @@ export function authed<P = Record<string, never>>(handler: Handler<P>, options: 
       const valid = await getValidSession();
       if (!valid) return failure("unauthorized");
       if (valid.state.mustChangePassword && !options.allowWhileMustChange) return failure("must_change_password");
-      return await handler(req, valid.ctx, await route.params, valid.session);
+      const response = await handler(req, valid.ctx, await route.params, valid.session);
+      // Una accion que modifica datos: los demas paneles abiertos se actualizan al instante.
+      if (req.method !== "GET" && req.method !== "HEAD" && response.status < 400) notifyChange();
+      return response;
     } catch (error) {
       console.error(`[api] ${req.method} ${req.nextUrl.pathname}:`, error);
       return NextResponse.json({ ok: false, error: "server_error", message: "Error interno. Intenta de nuevo." }, { status: 500 });

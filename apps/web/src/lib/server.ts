@@ -6,7 +6,9 @@ import {
   createEnqueuers,
   createQueues,
   isWorkerAlive,
+  publishChange,
   RedisRateLimiter,
+  subscribeChanges,
   type Enqueuers,
   type RateLimiter,
 } from "@empleado/queue";
@@ -47,6 +49,19 @@ export async function workerAlive(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Avisa a los demas paneles abiertos que algo cambio. Nunca falla ni retrasa la respuesta. */
+export function notifyChange(): void {
+  try {
+    void publishChange(getRedis(), prefix()).catch(() => {});
+  } catch {
+    /* sin Redis no hay tiempo real; queda la consulta periodica */
+  }
+}
+
+export function subscribeToChanges(onChange: () => void) {
+  return subscribeChanges(env("REDIS_URL"), prefix(), onChange);
 }
 
 export function getEnqueue(): Enqueuers {

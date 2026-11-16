@@ -124,3 +124,27 @@ export class RedisRateLimiter implements RateLimiter {
 }
 
 export const unlimited: RateLimiter = { allow: async () => true };
+
+// ---------------------------------------------------------------- tiempo real
+
+const changesChannel = (prefix: string) => `${prefix}:changes`;
+
+/**
+ * Avisa "algo cambio" a los paneles abiertos. No lleva datos (ni negocio ni contenido):
+ * cada panel vuelve a pedir lo suyo por su API, que ya filtra por negocio y permisos.
+ */
+export async function publishChange(redis: Redis, prefix: string): Promise<void> {
+  await redis.publish(changesChannel(prefix), "1");
+}
+
+/** Escucha los avisos con una conexion propia. Devuelve la funcion para dejar de escuchar. */
+export async function subscribeChanges(redisUrl: string, prefix: string, onChange: () => void): Promise<() => Promise<void>> {
+  const sub = new IORedis(redisUrl);
+  sub.on("error", () => {}); // si Redis cae, el panel sigue funcionando por consulta periodica
+  await sub.subscribe(changesChannel(prefix));
+  sub.on("message", onChange);
+  return async () => {
+    sub.removeAllListeners("message");
+    await sub.quit().catch(() => sub.disconnect());
+  };
+}
