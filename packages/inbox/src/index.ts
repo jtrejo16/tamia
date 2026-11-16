@@ -11,3 +11,4 @@ export * from "./users";
 export * from "./billing";
 export * from "./mercadopago";
 export * from "./operator";
+export * from "./channel";

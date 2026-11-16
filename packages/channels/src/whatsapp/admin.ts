@@ -83,6 +83,24 @@ export class GraphAdminClient {
     return out;
   }
 
+  /** Datos del numero de WhatsApp. Falla si el token no tiene acceso a ese numero. */
+  async getPhoneNumber(phoneNumberId: string): Promise<{ displayPhone: string | null; verifiedName: string | null; qualityRating: string | null }> {
+    const json = (await this.call(
+      `${encodeURIComponent(phoneNumberId)}?fields=display_phone_number,verified_name,quality_rating`,
+      { method: "GET" },
+    )) as { display_phone_number?: string; verified_name?: string; quality_rating?: string };
+    return {
+      displayPhone: json.display_phone_number ?? null,
+      verifiedName: json.verified_name ?? null,
+      qualityRating: json.quality_rating ?? null,
+    };
+  }
+
+  /** Suscribe nuestra app a la cuenta de WhatsApp Business para que lleguen sus mensajes al webhook. */
+  async subscribeApp(wabaId: string): Promise<void> {
+    await this.call(`${encodeURIComponent(wabaId)}/subscribed_apps`, { method: "POST" });
+  }
+
   private async call(path: string, init: { method: "GET" | "POST"; body?: unknown }): Promise<unknown> {
     let response: Response;
     try {

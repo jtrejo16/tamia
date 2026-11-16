@@ -33,6 +33,16 @@ Planes y precios: `packages/shared/src/plans.ts` (un solo lugar). Los precios ac
 ## Pendiente
 
 - Los planes se muestran con sus características, pero **no hay topes de uso** (conversaciones al mes) por plan ni se cambia el modelo de IA según el plan.
-- Conectar el WhatsApp del negocio sigue siendo por terminal (`pnpm wa:connect`/ `connect-channel`): hace falta una pantalla en el panel o el registro integrado de Meta.
+- Conectar el WhatsApp ya se hace desde el panel (ver abajo); falta el registro integrado de Meta para clientes sin conocimientos técnicos.
 - Sin facturas/CFDI ni correo de bienvenida/aviso de cobro (requiere un servicio de correo).
 - No se ha probado un checkout real contra Mercado Pago: solo con Mercado Pago simulado en pruebas automáticas.
+
+## Conectar el WhatsApp del negocio (Ajustes → WhatsApp, solo dueño)
+
+El dueño pega tres datos de su cuenta de Meta: **identificador del número**, **identificador de la cuenta de WhatsApp Business** y una **clave de acceso permanente** (token de usuario del sistema). Antes de guardar se comprueba con Meta que la clave tiene acceso a ese número y se suscribe nuestra app a la cuenta para que sus mensajes lleguen al webhook. Si Meta rechaza algo, no se guarda nada.
+
+- La clave se guarda **cifrada** (AES-256-GCM, ligada al negocio y al canal), no se vuelve a mostrar, y nunca entra a la bitácora.
+- Un mismo número no puede estar conectado en dos negocios.
+- *Desconectar* borra la clave y pausa el canal.
+
+**Límite importante:** el webhook de mensajes es el de **nuestra** aplicación de Meta. Para que lleguen los mensajes de un cliente, su cuenta de WhatsApp Business debe poder suscribirse a nuestra app (por ejemplo, que la clave sea de un usuario del sistema con nuestra app asignada en su portafolio de Meta). El camino para clientes que se dan de alta solos sin ningún paso en Meta es el **registro integrado de Meta (Embedded Signup)**, que requiere ser Proveedor de Tecnología verificado; no está construido.

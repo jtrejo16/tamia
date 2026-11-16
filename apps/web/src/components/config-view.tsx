@@ -6,10 +6,11 @@ import { api } from "@/lib/client";
 import type { Serialized } from "@/lib/types";
 import { usePanel } from "./panel-context";
 import { Alert, Badge, Button, Spinner, cx } from "./ui";
+import { ChannelTab } from "./channel-view";
 import { UsersTab } from "./users-view";
 
 type Config = Serialized<ConfigSnapshot>;
-type Tab = "negocio" | "asistente" | "servicios" | "equipo" | "horarios" | "conocimiento" | "plantillas" | "usuarios";
+type Tab = "negocio" | "asistente" | "servicios" | "equipo" | "horarios" | "conocimiento" | "plantillas" | "whatsapp" | "usuarios";
 
 const TABS: Array<{ id: Tab; label: string; ownerOnly?: boolean }> = [
   { id: "negocio", label: "Negocio" },
@@ -18,6 +19,7 @@ const TABS: Array<{ id: Tab; label: string; ownerOnly?: boolean }> = [
   { id: "equipo", label: "Equipo" },
   { id: "horarios", label: "Horarios" },
   { id: "conocimiento", label: "Conocimiento" },
+  { id: "whatsapp", label: "WhatsApp" },
   { id: "plantillas", label: "Plantillas" },
   { id: "usuarios", label: "Usuarios", ownerOnly: true },
 ];
@@ -150,7 +152,9 @@ export function ConfigView() {
           ))}
         </div>
 
-        {tab === "usuarios" && editable ? (
+        {tab === "whatsapp" ? (
+          <ChannelTab editable={editable} />
+        ) : tab === "usuarios" && editable ? (
           <UsersTab />
         ) : error && !config ? (
           <Alert>{error}</Alert>
