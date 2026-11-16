@@ -1,3 +1,4 @@
+import { tenantAccess } from "@empleado/inbox";
 import { ensureConversation, formatWhen } from "@empleado/agent";
 import {
   REMINDER_TEMPLATES,
@@ -172,8 +173,16 @@ export function createReminderScanner(deps: ReminderDeps) {
     let skipped = 0;
     let errors = 0;
 
+    // Un negocio sin acceso (pendiente, sin suscripcion vigente) no manda recordatorios; se
+    // consulta una vez por negocio en cada revision.
+    const access = new Map<string, boolean>();
     for (const job of due) {
       try {
+        if (!access.has(job.tenantId)) access.set(job.tenantId, (await tenantAccess(deps.db, job.tenantId)).allowed);
+        if (!access.get(job.tenantId)) {
+          skipped++;
+          continue;
+        }
         const result = await process(job);
         if (result.status === "sent") sent++;
         else {

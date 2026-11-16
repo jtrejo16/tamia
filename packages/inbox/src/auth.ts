@@ -51,7 +51,7 @@ export async function authenticate(db: Database, email: string, password: string
     tx.select().from(tenants).where(eq(tenants.id, chosen.tenantId)),
   );
   if (!tenant) return { ok: false, error: "no_membership" };
-  if (tenant.status !== "active") return { ok: false, error: "tenant_inactive" };
+  if (tenant.status !== "active" && tenant.status !== "pending") return { ok: false, error: "tenant_inactive" };
 
   const [self] = await withUser(db, user.id, (tx) =>
     tx.select({ name: users.name }).from(users).where(eq(users.id, user.id)),
@@ -113,7 +113,7 @@ export async function getSessionState(
 
     const [tenant] = await tx.select().from(tenants).where(eq(tenants.id, session.tid));
     if (!tenant) return { ok: false as const, reason: "no_membership" as const };
-    if (tenant.status !== "active") return { ok: false as const, reason: "tenant_inactive" as const };
+    if (tenant.status !== "active" && tenant.status !== "pending") return { ok: false as const, reason: "tenant_inactive" as const };
 
     return {
       ok: true as const,

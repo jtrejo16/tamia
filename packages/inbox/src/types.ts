@@ -7,7 +7,7 @@ export interface PanelContext {
   role: SessionRole;
 }
 
-export type PanelAction = "read" | "reply" | "approve" | "manage_appointments" | "playground" | "configure" | "manage_users";
+export type PanelAction = "read" | "reply" | "approve" | "manage_appointments" | "playground" | "configure" | "manage_users" | "billing";
 
 /**
  * "viewer" solo mira; "agent" atiende (responder, aprobar, citas, probador);
@@ -15,7 +15,7 @@ export type PanelAction = "read" | "reply" | "approve" | "manage_appointments" |
  */
 export function can(role: SessionRole, action: PanelAction): boolean {
   if (action === "read") return true;
-  if (action === "configure" || action === "manage_users") return role === "owner";
+  if (action === "configure" || action === "manage_users" || action === "billing") return role === "owner";
   return role === "owner" || role === "agent";
 }
 

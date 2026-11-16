@@ -1,5 +1,5 @@
 import type { InboundJobData } from "@empleado/channels";
-import { contacts, conversations, messages } from "@empleado/db";
+import { contacts, conversations, messages, subscriptions, tenants } from "@empleado/db";
 import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { noLock } from "../src/lock";
@@ -171,5 +171,40 @@ describe("procesador de mensajes entrantes", () => {
     });
     expect(result).toMatchObject({ action: "draft", queued: [] });
     expect(enqueued).toHaveLength(0);
+  });
+});
+
+describe("negocio sin acceso (pendiente de aprobar o sin suscripcion vigente)", () => {
+  async function block(w: World, how: "pending" | "trial_ended" | "canceled") {
+    if (how === "pending") await dbs.owner.db.update(tenants).set({ status: "pending" }).where(eq(tenants.id, w.tenantId));
+    else if (how === "trial_ended")
+      await dbs.owner.db.update(subscriptions).set({ status: "trialing", trialEndsAt: new Date(Date.now() - 86_400_000) }).where(eq(subscriptions.tenantId, w.tenantId));
+    else await dbs.owner.db.update(subscriptions).set({ status: "canceled" }).where(eq(subscriptions.tenantId, w.tenantId));
+  }
+
+  for (const how of ["pending", "trial_ended", "canceled"] as const) {
+    it(`${how}: el mensaje SE GUARDA para la bandeja pero el asistente no responde ni gasta IA`, async () => {
+      const { w, llm, enqueued, process, job } = await setup([{ text: "no deberia salir" }]);
+      await block(w, how);
+      const result = await process(job({ text: "Hola, quiero una cita" }));
+
+      expect(result).toMatchObject({ status: "processed", action: "none", reason: "agent_disabled" });
+      expect(llm.requests).toHaveLength(0);
+      expect(enqueued).toHaveLength(0);
+      const rows = await dbs.owner.db.select().from(messages).where(eq(messages.conversationId, w.conversationId));
+      expect(rows.map((r) => [r.direction, r.body])).toEqual([["in", "Hola, quiero una cita"]]);
+    });
+  }
+
+  it("al recuperar el acceso (el operador aprueba) el asistente vuelve a responder", async () => {
+    const { w, llm, process, job } = await setup([{ text: "¡Hola!" }]);
+    await block(w, "pending");
+    await process(job({ text: "primero" }));
+    expect(llm.requests).toHaveLength(0);
+
+    await dbs.owner.db.update(tenants).set({ status: "active" }).where(eq(tenants.id, w.tenantId));
+    const result = await process(job({ text: "segundo" }));
+    expect(result).toMatchObject({ status: "processed", action: "send" });
+    expect(llm.requests).toHaveLength(1);
   });
 });

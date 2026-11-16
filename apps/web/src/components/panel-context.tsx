@@ -9,6 +9,10 @@ export interface PanelInfo {
   tenantName: string;
   timezone: string;
   llmMode: "free" | "paid";
+  /** Operador de la plataforma: ve el panel de operador. */
+  isOperator: boolean;
+  /** Si el asistente esta habilitado (aprobacion + suscripcion) y por que no. */
+  access: { allowed: boolean; reason: string; trialEndsAt: string | null };
 }
 
 const Ctx = createContext<PanelInfo | null>(null);

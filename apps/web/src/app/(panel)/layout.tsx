@@ -1,6 +1,8 @@
+import { isOperator } from "@empleado/db";
+import { getBilling } from "@empleado/inbox";
 import { redirect } from "next/navigation";
 import { PanelShell } from "@/components/panel-shell";
-import { llmMode } from "@/lib/server";
+import { getDb, getMercadoPago, llmMode } from "@/lib/server";
 import { requireValidSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +13,9 @@ export default async function PanelLayout({ children }: { children: React.ReactN
   // Contraseña temporal: no se entra al panel hasta cambiarla.
   if (state.mustChangePassword) redirect("/cuenta?obligatorio=1");
 
+  const db = getDb();
+  const [billing, operator] = await Promise.all([getBilling(db, ctx, getMercadoPago() !== null), isOperator(db, ctx.userId)]);
+
   return (
     <PanelShell
       info={{
@@ -20,6 +25,12 @@ export default async function PanelLayout({ children }: { children: React.ReactN
         tenantName: state.tenantName,
         timezone: state.timezone,
         llmMode: llmMode(),
+        isOperator: operator,
+        access: {
+          allowed: billing.access.allowed,
+          reason: billing.access.reason,
+          trialEndsAt: billing.subscription?.trialEndsAt?.toISOString() ?? null,
+        },
       }}
     >
       {children}

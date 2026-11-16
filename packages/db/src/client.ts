@@ -140,3 +140,114 @@ export async function resolveChannel(
   const row = rows[0];
   return row ? { tenantId: row.tenant_id, channelId: row.channel_id } : null;
 }
+
+// ---------------------------------------------------------------- alta, cobro y operador (migracion 0008)
+
+export interface SignupInput {
+  name: string;
+  slug: string;
+  vertical: string;
+  timezone: string;
+  email: string;
+  userName: string;
+  passwordHash: string;
+  model: string;
+  fallbackModel: string;
+  trialDays: number;
+}
+
+/** Registro publico: crea negocio pendiente + dueno + prueba gratis. No toca cuentas existentes. */
+export async function signupCreateTenant(
+  db: Database,
+  i: SignupInput,
+): Promise<{ ok: true; tenantId: string; userId: string } | { ok: false; error: "email_taken" | "slug_taken" }> {
+  const rows = await db.execute<{ tenant_id: string | null; user_id: string | null; code: string }>(
+    sql`select * from signup_create_tenant(${i.name}, ${i.slug}, ${i.vertical}, ${i.timezone}, ${i.email}, ${i.userName}, ${i.passwordHash}, ${i.model}, ${i.fallbackModel}, ${i.trialDays})`,
+  );
+  const row = rows[0];
+  if (!row) throw new Error("signup_create_tenant no devolvio nada");
+  if (row.code === "ok" && row.tenant_id && row.user_id) return { ok: true, tenantId: row.tenant_id, userId: row.user_id };
+  return { ok: false, error: row.code === "slug_taken" ? "slug_taken" : "email_taken" };
+}
+
+/** El dueno inicia un checkout: guarda la suscripcion de Mercado Pago en curso y el plan elegido. */
+export async function billingAttachPreapproval(
+  db: Database,
+  scope: { tenantId: string; userId: string },
+  input: { preapprovalId: string; plan: string; payerEmail: string },
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('app.tenant_id', ${scope.tenantId}, true)`);
+    await tx.execute(sql`select set_config('app.user_id', ${scope.userId}, true)`);
+    const rows = await tx.execute<{ ok: boolean }>(
+      sql`select billing_attach_preapproval(${input.preapprovalId}, ${input.plan}::plan, ${input.payerEmail}) as ok`,
+    );
+    return rows[0]?.ok === true;
+  });
+}
+
+/** Aplica el estado de una suscripcion de Mercado Pago (ya verificado contra su API). Devuelve el negocio o null. */
+export async function billingApplyPreapproval(
+  db: Database,
+  input: { preapprovalId: string; mpStatus: string; nextPayment: Date | null },
+): Promise<string | null> {
+  const rows = await db.execute<{ t: string | null }>(
+    sql`select billing_apply_preapproval(${input.preapprovalId}, ${input.mpStatus}, ${input.nextPayment?.toISOString() ?? null}::timestamptz) as t`,
+  );
+  return rows[0]?.t ?? null;
+}
+
+export interface OperatorTenantRow {
+  id: string;
+  name: string;
+  slug: string;
+  vertical: string;
+  status: string;
+  plan: string;
+  createdAt: Date;
+  subStatus: string | null;
+  trialEndsAt: Date | null;
+  cardAuthorized: boolean;
+  ownerEmail: string | null;
+  channelConnected: boolean;
+}
+
+const asOperator = <T>(db: Database, userId: string, fn: (tx: Tx) => Promise<T>) => withUser(db, userId, fn);
+
+export async function operatorListTenants(db: Database, userId: string): Promise<OperatorTenantRow[]> {
+  return asOperator(db, userId, async (tx) => {
+    const rows = await tx.execute<{
+      id: string; name: string; slug: string; vertical: string; status: string; plan: string; created_at: Date;
+      sub_status: string | null; trial_ends_at: Date | null; card_authorized: boolean;
+      owner_email: string | null; channel_connected: boolean;
+    }>(sql`select * from operator_list_tenants()`);
+    return rows.map((r) => ({
+      id: r.id, name: r.name, slug: r.slug, vertical: r.vertical, status: r.status, plan: r.plan,
+      createdAt: new Date(r.created_at), subStatus: r.sub_status,
+      trialEndsAt: r.trial_ends_at ? new Date(r.trial_ends_at) : null,
+      cardAuthorized: r.card_authorized, ownerEmail: r.owner_email, channelConnected: r.channel_connected,
+    }));
+  });
+}
+
+export async function operatorSetTenantStatus(db: Database, userId: string, tenantId: string, status: "active" | "paused" | "cancelled"): Promise<boolean> {
+  return asOperator(db, userId, async (tx) => {
+    const rows = await tx.execute<{ ok: boolean }>(sql`select operator_set_tenant_status(${tenantId}, ${status}) as ok`);
+    return rows[0]?.ok === true;
+  });
+}
+
+export async function operatorSetComped(db: Database, userId: string, tenantId: string, on: boolean): Promise<boolean> {
+  return asOperator(db, userId, async (tx) => {
+    const rows = await tx.execute<{ ok: boolean }>(sql`select operator_set_comped(${tenantId}, ${on}) as ok`);
+    return rows[0]?.ok === true;
+  });
+}
+
+/** El usuario es operador de la plataforma? (lo decide la base de datos con la sesion de ese usuario) */
+export async function isOperator(db: Database, userId: string): Promise<boolean> {
+  return asOperator(db, userId, async (tx) => {
+    const rows = await tx.execute<{ ok: boolean }>(sql`select app_is_operator() as ok`);
+    return rows[0]?.ok === true;
+  });
+}

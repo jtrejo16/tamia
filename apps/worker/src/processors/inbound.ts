@@ -1,4 +1,5 @@
 import { ensureConversation, runAgentTurn } from "@empleado/agent";
+import { tenantAccess } from "@empleado/inbox";
 import { parseReminderPayload, type InboundJobData, type OutboundJobData } from "@empleado/channels";
 import type { Database } from "@empleado/db";
 import type { LLMProvider } from "@empleado/llm";
@@ -76,7 +77,11 @@ export function createInboundProcessor(deps: InboundDeps) {
         text = outcome.text;
       }
 
+      // Negocio sin acceso (pendiente de aprobacion o sin suscripcion vigente): se guarda el mensaje
+      // para que se vea en la bandeja, pero el asistente no responde.
+      const access = await tenantAccess(deps.db, tenantId);
       const result = await runAgentTurn({
+        agentDisabledReason: access.allowed ? undefined : access.reason,
         db: deps.db,
         llm: deps.llm,
         tenantId,

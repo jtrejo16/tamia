@@ -30,6 +30,27 @@ const ITEMS = [
   { href: "/configuracion", label: "Ajustes", icon: ICONS.cog, badge: null },
 ];
 
+const ACCESS_TEXT: Record<string, string> = {
+  tenant_pending: "Tu cuenta está en revisión; en cuanto la aprobemos empezará a responder. Mientras, puedes configurar tu negocio.",
+  tenant_inactive: "Tu negocio está pausado. Contacta a soporte.",
+  no_subscription: "No hay una suscripción registrada.",
+  trial_ended: "Terminó tu prueba gratis.",
+  payment_overdue: "No se pudo cobrar tu suscripción.",
+  canceled: "La suscripción está cancelada.",
+};
+
+/** Aviso discreto cuando quedan pocos dias de prueba. */
+function TrialNote({ iso, owner }: { iso: string; owner: boolean }) {
+  const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+  if (days > 5 || days < 0) return null;
+  return (
+    <div className="border-b border-sky-200 bg-sky-50 px-4 py-1.5 text-sm text-sky-900">
+      Tu prueba gratis termina {days <= 0 ? "hoy" : `en ${days} día${days === 1 ? "" : "s"}`}.{" "}
+      {owner && <Link href="/facturacion" className="font-semibold underline">Elegir plan</Link>}
+    </div>
+  );
+}
+
 export function PanelShell({ info, children }: { info: PanelInfo; children: ReactNode }) {
   const pathname = usePathname();
   useLiveUpdates();
@@ -99,6 +120,8 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
               </button>
             </div>
             <Link href="/cuenta" className="block text-center text-xs font-medium text-teal-700 hover:underline">Mi cuenta y contraseña</Link>
+            {info.role === "owner" && <Link href="/facturacion" className="block text-center text-xs font-medium text-teal-700 hover:underline">Facturación</Link>}
+            {info.isOperator && <Link href="/operador" className="block text-center text-xs font-medium text-teal-700 hover:underline">Operador de la plataforma</Link>}
           </div>
         </aside>
 
@@ -109,6 +132,8 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
             {info.llmMode === "free" && <p className="text-xs text-amber-700">IA gratuita · solo pruebas</p>}
           </div>
           <div className="flex items-center gap-1">
+            {info.role === "owner" && <Link href="/facturacion" className="rounded-lg px-2 py-1 text-xs font-medium text-teal-700 hover:bg-slate-100">Plan</Link>}
+            {info.isOperator && <Link href="/operador" className="rounded-lg px-2 py-1 text-xs font-medium text-teal-700 hover:bg-slate-100">Operador</Link>}
             <Link href="/cuenta" className="rounded-lg px-2 py-1 text-xs font-medium text-teal-700 hover:bg-slate-100">Mi cuenta</Link>
             <button onClick={logout} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" title="Cerrar sesión">
               <Icon d={ICONS.out} />
@@ -117,6 +142,16 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
         </header>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {!info.access.allowed && (
+            <div role="alert" className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-sm text-amber-900">
+              <strong>El asistente está detenido.</strong>{" "}
+              {ACCESS_TEXT[info.access.reason] ?? "Revisa tu suscripción."}{" "}
+              {info.role === "owner" && info.access.reason !== "tenant_pending" && info.access.reason !== "tenant_inactive" && (
+                <Link href="/facturacion" className="font-semibold underline">Ver planes</Link>
+              )}
+            </div>
+          )}
+          {info.access.allowed && info.access.trialEndsAt && <TrialNote iso={info.access.trialEndsAt} owner={info.role === "owner"} />}
           {sendingDown && (
             <div role="alert" className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-sm text-amber-900">
               <strong>El servicio de envío de WhatsApp está detenido.</strong> Lo que escribas o apruebes queda en cola y llegará al cliente cuando se reanude.

@@ -12,6 +12,7 @@ import {
   type Enqueuers,
   type RateLimiter,
 } from "@empleado/queue";
+import { MercadoPagoClient } from "@empleado/inbox";
 import type { Redis } from "ioredis";
 
 export function env(name: string): string {
@@ -27,6 +28,7 @@ interface Singletons {
   enqueue?: Enqueuers;
   limiter?: RateLimiter;
   llm?: LLMProvider;
+  mp?: MercadoPagoClient;
 }
 const g = globalThis as unknown as { __empleado?: Singletons };
 const s = (): Singletons => (g.__empleado ??= {});
@@ -81,3 +83,15 @@ export function getLLM(): LLMProvider {
 }
 
 export const llmMode = (): "free" | "paid" => (process.env.LLM_MODE?.trim().toLowerCase() === "free" ? "free" : "paid");
+
+/** Cliente de Mercado Pago, o null si el servidor no tiene su token (entonces no se puede cobrar). */
+export function getMercadoPago(): MercadoPagoClient | null {
+  const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN?.trim();
+  if (!accessToken) return null;
+  return (s().mp ??= new MercadoPagoClient({ accessToken, baseUrl: process.env.MERCADOPAGO_BASE_URL || undefined }));
+}
+
+/** Direccion publica del panel (para volver de Mercado Pago). */
+export function publicBaseUrl(fallback: string): string {
+  return (process.env.PUBLIC_BASE_URL?.trim() || fallback).replace(/\/$/, "");
+}

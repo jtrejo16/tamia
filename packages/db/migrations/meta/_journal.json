@@ -50,6 +50,27 @@
       "when": 1794816062827,
       "tag": "0006_user_admin_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794818272660,
+      "tag": "0007_billing_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794818279438,
+      "tag": "0008_billing_functions",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794840540065,
+      "tag": "0009_billing_apply_fix",
+      "breakpoints": true
     }
   ]
 }

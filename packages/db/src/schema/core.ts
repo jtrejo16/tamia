@@ -31,7 +31,9 @@ export const timestamps = {
 
 export const roleEnum = pgEnum("role", ["owner", "agent", "viewer"]);
 export const planEnum = pgEnum("plan", ["esencial", "profesional", "premium"]);
-export const tenantStatusEnum = pgEnum("tenant_status", ["active", "paused", "cancelled"]);
+/** pending = se registro solo y espera aprobacion del operador. */
+export const tenantStatusEnum = pgEnum("tenant_status", ["active", "paused", "cancelled", "pending"]);
+export const subscriptionStatusEnum = pgEnum("subscription_status", ["trialing", "active", "past_due", "canceled", "comped"]);
 
 // ---------- Tablas ----------
 
@@ -87,6 +89,28 @@ export const users = pgTable("users", {
   sessionVersion: integer("session_version").notNull().default(0),
   /** Contrasena temporal: el usuario debe cambiarla antes de hacer nada mas. */
   mustChangePassword: boolean("must_change_password").notNull().default(false),
+  /** Operador de la plataforma (el dueno del SaaS): ve y administra todos los negocios. */
+  isOperator: boolean("is_operator").notNull().default(false),
+  ...timestamps,
+});
+
+/**
+ * Suscripcion de un negocio. La app SOLO puede leerla; se modifica unicamente con las funciones
+ * SECURITY DEFINER (alta, cobro, operador), para que ningun dueno pueda darse un plan a si mismo.
+ */
+export const subscriptions = pgTable("subscriptions", {
+  id: pk(),
+  tenantId: tenantRef().unique(),
+  status: subscriptionStatusEnum("status").notNull().default("trialing"),
+  trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+  /** Proximo cobro (o fin del periodo pagado) segun Mercado Pago. */
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  /** Plan elegido en un checkout aun no autorizado. */
+  pendingPlan: planEnum("pending_plan"),
+  mpPreapprovalId: text("mp_preapproval_id"),
+  mpPayerEmail: text("mp_payer_email"),
+  /** El cliente ya autorizo su tarjeta en Mercado Pago (cobrara al terminar la prueba). */
+  cardAuthorized: boolean("card_authorized").notNull().default(false),
   ...timestamps,
 });
 

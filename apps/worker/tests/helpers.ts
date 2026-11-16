@@ -11,6 +11,7 @@ import {
   conversations,
   createDb,
   messages,
+  subscriptions,
   tenants,
   type DbHandle,
 } from "@empleado/db";
@@ -149,6 +150,7 @@ export async function makeWorld(
     })
     .returning();
   const tenantId = tenant!.id;
+  await db.insert(subscriptions).values({ tenantId, status: "comped" }); // acceso vigente: estos tests no son de cobro
   await db.insert(agentConfigs).values({
     tenantId,
     model: "anthropic/claude-haiku-5.5",

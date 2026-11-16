@@ -94,6 +94,8 @@ try {
     .returning();
   if (!owner) throw new Error("No se pudo crear el usuario demo");
   await db.insert(s.memberships).values({ tenantId, userId: owner.id, role: "owner" });
+  // El demo es de cortesia: sin cobro ni corte de servicio.
+  await db.insert(s.subscriptions).values({ tenantId, status: "comped" });
 
   await db.insert(s.agentConfigs).values({
     tenantId,

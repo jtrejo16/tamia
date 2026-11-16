@@ -12,6 +12,7 @@
     "migrate": "tsx src/migrate.ts",
     "seed": "tsx src/seed.ts",
     "set-password": "tsx src/set-password.ts",
+    "operator": "tsx src/make-operator.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

@@ -46,6 +46,8 @@ export interface RunTurnInput {
   externalMessageId?: string;
   now?: Date;
   maxIterations?: number;
+  /** El mensaje se guarda pero el asistente no responde (negocio sin acceso: pendiente, sin suscripcion...). */
+  agentDisabledReason?: string;
 }
 
 export interface TurnUsage {
@@ -60,7 +62,7 @@ export interface TurnUsage {
 export interface TurnResult {
   /** send = mensaje en cola de envio; draft = borrador para aprobar; none = el bot no responde. */
   action: "send" | "draft" | "none";
-  reason?: "duplicate" | "human_has_control";
+  reason?: "duplicate" | "human_has_control" | "agent_disabled";
   text: string | null;
   approvalId?: string;
   messageId?: string;
@@ -166,6 +168,7 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
       .where(eq(conversations.id, conversationId));
 
     if (conversation.state === "human") return { humanControl: true as const };
+    if (input.agentDisabledReason) return { disabled: true as const };
 
     const [{ n: inboundCount } = { n: 1 }] = await tx
       .select({ n: count() })
@@ -204,6 +207,7 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
 
   if ("duplicate" in loaded) return nothing("duplicate");
   if ("humanControl" in loaded) return nothing("human_has_control");
+  if ("disabled" in loaded) return nothing("agent_disabled");
 
   const { tenant, config, contact } = loaded;
   assertApprovedModel(config.model);

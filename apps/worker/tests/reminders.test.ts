@@ -1,5 +1,5 @@
 import { buttonPayloads, decodeTemplateMessage, type InboundJobData } from "@empleado/channels";
-import { appointments, auditLog, contacts, conversations, messages, templates } from "@empleado/db";
+import { appointments, auditLog, contacts, conversations, messages, templates, tenants } from "@empleado/db";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { noLock } from "../src/lock";
