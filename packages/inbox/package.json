@@ -19,7 +19,8 @@
     "@empleado/llm": "workspace:*",
     "@empleado/scheduling": "workspace:*",
     "@empleado/shared": "workspace:*",
-    "drizzle-orm": "^0.44.0"
+    "drizzle-orm": "^0.44.0",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
