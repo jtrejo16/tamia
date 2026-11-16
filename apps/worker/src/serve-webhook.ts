@@ -15,6 +15,13 @@ if (!appSecret) {
   );
 }
 
+if (appSecret.includes("solo-para-desarrollo") && !config.graphBaseUrl) {
+  consoleLogger("webhook.warning", {
+    message:
+      "META_APP_SECRET sigue siendo el de desarrollo: los webhooks reales de Meta se rechazarán con 401. Pon la clave secreta de tu app de Meta en .env.",
+  });
+}
+
 const system = createSystem(config, consoleLogger);
 const server = createWebhookServer(createHandlers(system, { verifyToken, appSecret }, consoleLogger), consoleLogger);
 

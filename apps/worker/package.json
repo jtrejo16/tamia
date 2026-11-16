@@ -9,6 +9,7 @@
     "dev:fake-graph": "tsx src/dev/fake-graph.ts",
     "dev:simulate": "tsx src/dev/simulate.ts",
     "connect-channel": "tsx src/dev/connect-channel.ts",
+    "check-channel": "tsx src/dev/check-channel.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
