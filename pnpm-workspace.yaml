@@ -5,3 +5,5 @@ packages:
 # Solo esbuild puede ejecutar scripts de instalacion (descarga su binario nativo).
 allowBuilds:
   esbuild: true
+  # Acelerador nativo OPCIONAL de BullMQ: sin el, usa JavaScript puro. No se ejecutan sus scripts.
+  msgpackr-extract: false

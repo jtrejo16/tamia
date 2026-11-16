@@ -22,6 +22,13 @@
       "when": 1794805635327,
       "tag": "0002_tenant_profile_and_proposed_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794808381953,
+      "tag": "0003_stale_queued_messages",
+      "breakpoints": true
     }
   ]
 }

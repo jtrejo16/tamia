@@ -40,6 +40,18 @@ export async function withTenant<T>(
   });
 }
 
+/** Mensajes salientes que llevan mas de `olderThanSeconds` en cola (barrido de recuperacion). */
+export async function staleQueuedMessages(
+  db: Database,
+  olderThanSeconds: number,
+  limit = 200,
+): Promise<Array<{ tenantId: string; messageId: string }>> {
+  const rows = await db.execute<{ tenant_id: string; message_id: string }>(
+    sql`select * from stale_queued_messages(${olderThanSeconds}, ${limit})`,
+  );
+  return rows.map((r) => ({ tenantId: r.tenant_id, messageId: r.message_id }));
+}
+
 /** Resuelve webhook -> tenant/canal sin contexto previo (funcion SECURITY DEFINER). */
 export async function resolveChannel(
   db: Database,

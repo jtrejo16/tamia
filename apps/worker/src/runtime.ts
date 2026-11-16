@@ -1,0 +1,104 @@
+import { WhatsAppClient } from "@empleado/channels";
+import { createDb, type DbHandle } from "@empleado/db";
+import { createLLMProvider, type LLMProvider } from "@empleado/llm";
+import type { Redis } from "ioredis";
+import { loadChannelAccess } from "./channel-access";
+import { consoleLogger, type Logger, type WorkerConfig } from "./config";
+import { RedisLock } from "./lock";
+import { sweepStaleMessages } from "./outbox";
+import { createInboundProcessor } from "./processors/inbound";
+import { createOutboundProcessor, type Sender } from "./processors/outbound";
+import { createStatusProcessor } from "./processors/status";
+import { RedisRateLimiter } from "./ratelimit";
+import { createConnection, createEnqueuers, createQueues, type Enqueuers, type Queues } from "./queues";
+import { startWorkers, type RunningWorkers } from "./workers";
+
+export interface WorkerSystem {
+  db: DbHandle;
+  redis: Redis;
+  queues: Queues;
+  enqueue: Enqueuers;
+  llm: LLMProvider;
+  log: Logger;
+  workers?: RunningWorkers;
+  close(): Promise<void>;
+}
+
+/** Arma las conexiones y las colas (el webhook las usa solo para encolar). */
+export function createSystem(config: WorkerConfig, log: Logger = consoleLogger): WorkerSystem {
+  const db = createDb(config.databaseAppUrl, { max: 10 });
+  const redis = createConnection(config.redisUrl);
+  const queues = createQueues(redis, config.queuePrefix);
+  const enqueue = createEnqueuers(queues);
+  const llm = createLLMProvider({
+    apiKey: config.openRouterApiKey,
+    mode: config.llmMode,
+    appName: "Empleado Digital",
+  });
+  const system: WorkerSystem = {
+    db,
+    redis,
+    queues,
+    enqueue,
+    llm,
+    log,
+    close: async () => {
+      await system.workers?.close();
+      await queues.close();
+      await db.close();
+      redis.disconnect();
+    },
+  };
+  return system;
+}
+
+/** Arranca los trabajadores y el barrido de recuperacion de envios. */
+export function startSystem(config: WorkerConfig, system: WorkerSystem): () => void {
+  const { db, redis, enqueue, llm, log } = system;
+  const lock = new RedisLock(redis, config.queuePrefix);
+  const limiter = new RedisRateLimiter(redis, config.queuePrefix);
+
+  const makeSender = (access: { accessToken: string; phoneNumberId: string }): Sender =>
+    new WhatsAppClient({
+      accessToken: access.accessToken,
+      phoneNumberId: access.phoneNumberId,
+      apiVersion: config.graphApiVersion,
+      baseUrl: config.graphBaseUrl,
+    });
+
+  const inbound = createInboundProcessor({
+    db: db.db,
+    llm,
+    enqueueOutbound: enqueue.outbound,
+    lock,
+    limiter,
+    log,
+    markRead: async (job) => {
+      const access = await loadChannelAccess(db.db, config.encryptionKey, job.tenantId, job.channelId);
+      if (!access?.accessToken) return;
+      await new WhatsAppClient({
+        accessToken: access.accessToken,
+        phoneNumberId: access.phoneNumberId,
+        apiVersion: config.graphApiVersion,
+        baseUrl: config.graphBaseUrl,
+      }).markRead(job.message.id);
+    },
+  });
+  const outbound = createOutboundProcessor({ db: db.db, key: config.encryptionKey, makeSender, lock, log });
+  const status = createStatusProcessor({ db: db.db, log });
+
+  system.workers = startWorkers({
+    connection: redis,
+    prefix: config.queuePrefix,
+    log,
+    handlers: { inbound, outbound, status },
+  });
+
+  const sweep = setInterval(() => {
+    sweepStaleMessages(db.db, enqueue.outbound)
+      .then((n) => n > 0 && log("sweeper.requeued", { count: n }))
+      .catch((e) => log("sweeper.error", { error: e instanceof Error ? e.message : String(e) }));
+  }, 30_000);
+
+  return () => clearInterval(sweep);
+}

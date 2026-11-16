@@ -1,0 +1,31 @@
+{
+  "name": "@empleado/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "webhook": "tsx src/serve-webhook.ts",
+    "dev:fake-graph": "tsx src/dev/fake-graph.ts",
+    "dev:simulate": "tsx src/dev/simulate.ts",
+    "connect-channel": "tsx src/dev/connect-channel.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@empleado/agent": "workspace:*",
+    "@empleado/channels": "workspace:*",
+    "@empleado/db": "workspace:*",
+    "@empleado/llm": "workspace:*",
+    "@empleado/shared": "workspace:*",
+    "bullmq": "^5.0.0",
+    "drizzle-orm": "^0.44.0",
+    "ioredis": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
