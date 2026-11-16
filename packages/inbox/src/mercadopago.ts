@@ -26,8 +26,12 @@ export class MercadoPagoError extends Error {
     readonly status: number,
   ) {
     super(message);
+    this.name = "MercadoPagoError";
   }
 }
+
+/** Reconoce el error por nombre (no por clase): sigue funcionando si el modulo se recarga en caliente. */
+export const isMercadoPagoError = (e: unknown): e is MercadoPagoError => e instanceof Error && e.name === "MercadoPagoError";
 
 interface RawPreapproval {
   id?: string;

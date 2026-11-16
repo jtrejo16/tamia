@@ -25,7 +25,7 @@ import {
 import { eq } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import { MercadoPagoError, type MercadoPagoClient } from "./mercadopago";
+import { isMercadoPagoError, type MercadoPagoClient } from "./mercadopago";
 import { can, fail, type Failure, type PanelContext, type Success } from "./types";
 
 // ----------------------------------------------------------------- alta (registro publico)
@@ -219,7 +219,7 @@ export async function startCheckout(
     );
     return { ok: true, url: preapproval.initPoint };
   } catch (error) {
-    if (error instanceof MercadoPagoError) return fail("provider_error");
+    if (isMercadoPagoError(error)) return fail("provider_error");
     throw error;
   }
 }
@@ -250,7 +250,7 @@ export async function cancelSubscription(
     );
     return { ok: true };
   } catch (error) {
-    if (error instanceof MercadoPagoError) return fail("provider_error");
+    if (isMercadoPagoError(error)) return fail("provider_error");
     throw error;
   }
 }
@@ -268,7 +268,7 @@ export async function refreshFromProvider(db: Database, ctx: PanelContext, mp: M
     await billingApplyPreapproval(db, { preapprovalId: sub.mpPreapprovalId, mpStatus: current.status, nextPayment: current.nextPaymentDate });
     return { ok: true };
   } catch (error) {
-    if (error instanceof MercadoPagoError) return fail("provider_error");
+    if (isMercadoPagoError(error)) return fail("provider_error");
     throw error;
   }
 }
