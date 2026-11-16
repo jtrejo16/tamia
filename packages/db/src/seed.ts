@@ -34,6 +34,24 @@ try {
       vertical: "dental",
       timezone: "America/Merida",
       plan: "profesional",
+      privacyNoticeUrl: "https://clinicasonrisa.example/aviso-de-privacidad",
+      profile: {
+        description: "clínica dental familiar en Mérida con más de 10 años de experiencia",
+        address: "Calle 60 #500 por 35 y 37, Centro, Mérida, Yucatán",
+        mapsUrl: "https://maps.google.com/?q=Calle+60+500+Centro+Merida",
+        latitude: 20.9674,
+        longitude: -89.6237,
+        paymentMethods: ["efectivo", "tarjeta de débito o crédito", "transferencia"],
+        keyFacts: [
+          "Estacionamiento gratuito para pacientes en la calle 35.",
+          "Atendemos niños a partir de 4 años.",
+          "Aceptamos reembolso de seguros dentales (damos factura y receta), sin convenio directo.",
+        ],
+        cancellationPolicy:
+          "Avisar con al menos 12 horas de anticipación; con más de 15 minutos de retraso la cita se reprograma.",
+        cancellationNoticeHours: 12,
+        depositPolicy: "Endodoncia y blanqueamiento requieren anticipo para apartar el horario.",
+      },
       humanHours: {
         mon: ["09:00", "19:00"],
         tue: ["09:00", "19:00"],
@@ -60,9 +78,9 @@ try {
     assistantName: "Sonri",
     tone: "cálido y profesional",
     formality: "usted",
-    // Se confirma contra la lista blanca de OpenRouter en el paso del LLM.
-    model: "anthropic/claude-haiku-5-5",
-    fallbackModel: "anthropic/claude-sonnet-5-5",
+    // IDs verificados contra OpenRouter; deben estar en la lista blanca de @empleado/llm.
+    model: "anthropic/claude-haiku-5.5",
+    fallbackModel: "anthropic/claude-sonnet-5.5",
     autonomy: "copilot",
     escalationRules: ["quejas", "descuentos", "facturas", "urgencias dentales"],
     forbiddenTopics: ["diagnósticos", "opiniones sobre tratamientos de otros dentistas"],

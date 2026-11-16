@@ -64,6 +64,14 @@ export const knowledgeChunks = pgTable(
   ],
 );
 
+/** Accion que el agente propuso en modo copiloto/semi y que se ejecuta al aprobar el borrador. */
+export interface ProposedAction {
+  tool: string;
+  args: Record<string, unknown>;
+  /** Texto legible para el revisor: "Crear cita: Limpieza con Dra. Ruiz, mar 2 mar 10:00". */
+  summary: string;
+}
+
 /** Borradores del modo entrenamiento. El par draft -> final alimenta los few-shot. */
 export const approvals = pgTable(
   "approvals",
@@ -74,6 +82,7 @@ export const approvals = pgTable(
       .notNull()
       .references(() => conversations.id, { onDelete: "cascade" }),
     draft: text("draft").notNull(),
+    proposedActions: jsonb("proposed_actions").$type<ProposedAction[]>().notNull().default([]),
     finalText: text("final_text"),
     status: approvalStatusEnum("status").notNull().default("pending"),
     reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),

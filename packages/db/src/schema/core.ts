@@ -33,6 +33,22 @@ export const tenantStatusEnum = pgEnum("tenant_status", ["active", "paused", "ca
 
 // ---------- Tablas ----------
 
+/** Datos del negocio que el agente usa como "datos fijos" y politicas. Todo opcional. */
+export interface TenantProfile {
+  description?: string;
+  address?: string;
+  mapsUrl?: string;
+  latitude?: number;
+  longitude?: number;
+  paymentMethods?: string[];
+  /** Datos clave cortos que siempre deben estar a la mano (estacionamiento, accesibilidad...). */
+  keyFacts?: string[];
+  cancellationPolicy?: string;
+  /** Horas minimas de aviso para cancelar/reprogramar sin pasar por un humano. */
+  cancellationNoticeHours?: number;
+  depositPolicy?: string;
+}
+
 /** El negocio cliente. No lleva tenant_id: su propio id es el tenant. */
 export const tenants = pgTable("tenants", {
   id: pk(),
@@ -44,6 +60,7 @@ export const tenants = pgTable("tenants", {
   plan: planEnum("plan").notNull().default("esencial"),
   status: tenantStatusEnum("status").notNull().default("active"),
   privacyNoticeUrl: text("privacy_notice_url"),
+  profile: jsonb("profile").$type<TenantProfile>().notNull().default({}),
   /** Horario de atencion humana: { "mon": ["09:00","19:00"], ... } */
   humanHours: jsonb("human_hours").$type<Record<string, [string, string] | null>>(),
   ...timestamps,

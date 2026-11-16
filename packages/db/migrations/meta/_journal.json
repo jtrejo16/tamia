@@ -15,6 +15,13 @@
       "when": 1794804164939,
       "tag": "0001_rls_and_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794805635327,
+      "tag": "0002_tenant_profile_and_proposed_actions",
+      "breakpoints": true
     }
   ]
 }

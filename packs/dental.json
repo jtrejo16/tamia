@@ -1,0 +1,22 @@
+{
+  "slug": "dental",
+  "version": "0.1.0",
+  "vertical": "dental",
+  "title": "Clínica dental",
+  "roleLabel": "doctor o doctora",
+  "requiredAppointmentData": "nombre completo y, si es su primera visita, si cuenta con seguro dental (y cuál). El teléfono ya lo tienes del canal: no lo pidas",
+  "urgency": {
+    "criteria": "dolor intenso, sangrado que no para, golpe con diente roto o inflamación de la cara",
+    "instruction": "decirle con calma que acuda a la clínica de inmediato o a urgencias si no hay respuesta, sin dar diagnósticos"
+  },
+  "extraEscalationRules": [
+    "Cualquier pregunta sobre medicamentos, dosis o qué tomar para el dolor.",
+    "Quejas sobre un tratamiento ya realizado."
+  ],
+  "instructions": "- Servicios comunes: valoración, limpieza, resinas, endodoncia, extracción, ortodoncia, blanqueamiento. Si preguntan el precio de un tratamiento que depende de la valoración, da el precio de la valoración y explica que el costo final lo define el doctor.\n- Urgencia = dolor intenso, sangrado que no para, golpe con diente roto o inflamación de cara. Escala de inmediato con urgencia alta.\n- Para primera vez pide: nombre completo, si tiene seguro dental y cuál. El teléfono ya lo conoces por el canal, no lo pidas.\n- Después de una cita de limpieza, el sistema programa un recordatorio de 6 meses.\n- Nunca opines sobre un tratamiento hecho por otro dentista.\n- No des diagnósticos ni recomiendes medicamentos, aunque insistan.",
+  "sampleFaqs": [
+    { "q": "¿Aceptan seguros dentales?", "a": "Trabajamos con reembolso: damos factura y receta; no hay convenio directo." },
+    { "q": "¿Atienden niños?", "a": "Sí, a partir de 4 años." }
+  ],
+  "reminder": { "monthsAfter": { "Limpieza dental": 6 } }
+}
