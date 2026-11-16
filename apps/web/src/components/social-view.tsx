@@ -1,6 +1,6 @@
 "use client";
 
-import type { SocialChannelView } from "@empleado/inbox";
+import type { SocialChannelView, SocialCheck } from "@empleado/inbox";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/client";
 import type { Serialized } from "@/lib/types";
@@ -28,6 +28,7 @@ export function SocialTab({ editable }: { editable: boolean }) {
   const [choice, setChoice] = useState<{ pageId: string; messenger: boolean; instagram: boolean } | null>(null);
   const [notice, setNotice] = useState<{ tone: "green" | "rose" | "amber"; text: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [checks, setChecks] = useState<SocialCheck[] | null>(null);
 
   const load = useCallback(async () => {
     const res = await api<{ ok: true; available: boolean; channels: Channel[] }>("/api/channel/social");
@@ -67,6 +68,15 @@ export function SocialTab({ editable }: { editable: boolean }) {
     await load();
   }
 
+  async function check() {
+    setBusy("check");
+    setChecks(null);
+    const res = await api<{ ok: true; checks: SocialCheck[] }>("/api/channel/social/check", { method: "POST" });
+    setBusy(null);
+    if (res.ok) setChecks(res.checks);
+    else setNotice({ tone: "rose", text: res.message });
+  }
+
   async function disconnect(type: string) {
     if (!window.confirm(`¿Desconectar ${LABEL[type as keyof typeof LABEL]}?\n\nSe borra la clave guardada y el asistente dejará de recibir y enviar mensajes por esa red.`)) return;
     setBusy(type);
@@ -97,6 +107,19 @@ export function SocialTab({ editable }: { editable: boolean }) {
           ))}
           {data.channels.length === 0 && <li className="py-2 text-sm text-slate-500">Todavía no has conectado Messenger ni Instagram.</li>}
         </ul>
+        {editable && data.channels.some((c) => c.hasToken) && (
+          <div className="mt-3 space-y-2">
+            <Button variant="secondary" loading={busy === "check"} onClick={check}>Comprobar conexión con Meta</Button>
+            {checks?.map((c) => (
+              <Alert key={c.type} tone={c.problems.length === 0 ? "green" : "amber"}>
+                <p className="font-medium">{LABEL[c.type]}: {c.problems.length === 0 ? "todo en orden ✓" : "hay algo que arreglar"}</p>
+                <p className="text-xs">Clave: {c.tokenValid ? "válida" : "no válida"} · App suscrita a la página: {c.subscribed ? `sí (${c.fields.join(", ") || "sin campos"})` : "no"}</p>
+                {c.problems.length > 0 && <ul className="mt-1 list-disc pl-5">{c.problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
+              </Alert>
+            ))}
+            {checks && checks.length === 0 && <Alert tone="amber">No hay redes con clave guardada para comprobar.</Alert>}
+          </div>
+        )}
       </section>
 
       {pages && choice && (

@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   buildFacebookLoginUrl,
+  checkSocialChannels,
   connectSocial,
   disconnectSocial,
   fetchPagesForCode,
@@ -193,5 +194,59 @@ describe("conectar la pagina elegida", () => {
     expect(row).toMatchObject({ credentialsEnc: null, status: "paused" });
     expect(await disconnectSocial(dbs.app.db, w.owner, "tiktok")).toEqual({ ok: false, error: "invalid" });
     expect(await disconnectSocial(dbs.app.db, w.owner, "instagram")).toEqual({ ok: false, error: "not_found" });
+  });
+});
+
+describe("comprobar la conexion con Meta", () => {
+  /** Meta falso para la comprobacion: la suscripcion y la clave se controlan desde la prueba. */
+  const checkDeps = (state: { subs: unknown[]; tokenOk: boolean }): SocialDeps => ({
+    appId: "APP-ID",
+    appSecret: "S",
+    key: KEY,
+    fetch: (async (url: string | URL | Request) => {
+      const path = new URL(String(url)).pathname.replace(/^\/v[\d.]+\//, "");
+      const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status });
+      if (!state.tokenOk) return json({ error: { message: "Invalid OAuth access token", code: 190 } }, 400);
+      if (path.endsWith("/subscribed_apps")) return json({ data: state.subs });
+      return json({ id: path });
+    }) as typeof fetch,
+  });
+  const connected = async () => {
+    const w = await world();
+    const p = page({ instagram: { id: unique(), username: "ig" } });
+    await connectSocial(dbs.app.db, fakeMeta().deps, w.owner, { page: p, messenger: true, instagram: true });
+    return { w, p };
+  };
+
+  it("todo en orden: clave valida y la app suscrita a 'messages' (tambien para Instagram, via su pagina)", async () => {
+    const { w } = await connected();
+    const r = await checkSocialChannels(dbs.app.db, checkDeps({ tokenOk: true, subs: [{ id: "APP-ID", subscribed_fields: ["messages", "messaging_postbacks"] }] }), w.owner);
+    if (!r.ok) throw new Error("no deberia fallar");
+    expect(r.checks.map((c) => c.type).sort()).toEqual(["instagram", "messenger"]);
+    for (const c of r.checks) expect(c).toMatchObject({ tokenValid: true, subscribed: true, problems: [] });
+  });
+
+  it("la pagina NO esta suscrita a nuestra app: lo dice, y es la causa de que no lleguen mensajes", async () => {
+    const { w } = await connected();
+    const r = await checkSocialChannels(dbs.app.db, checkDeps({ tokenOk: true, subs: [{ id: "OTRA-APP", subscribed_fields: ["messages"] }] }), w.owner);
+    if (!r.ok) throw new Error("no deberia fallar");
+    expect(r.checks[0]).toMatchObject({ tokenValid: true, subscribed: false });
+    expect(r.checks[0]!.problems[0]).toContain("no está suscrita");
+  });
+
+  it("suscrita pero sin el campo 'messages': tambien se avisa", async () => {
+    const { w } = await connected();
+    const r = await checkSocialChannels(dbs.app.db, checkDeps({ tokenOk: true, subs: [{ id: "APP-ID", subscribed_fields: ["feed"] }] }), w.owner);
+    if (!r.ok) throw new Error("no deberia fallar");
+    expect(r.checks[0]!.problems[0]).toContain("messages");
+  });
+
+  it("clave vencida o revocada: se detecta y pide reconectar; solo el dueño puede comprobar", async () => {
+    const { w } = await connected();
+    const r = await checkSocialChannels(dbs.app.db, checkDeps({ tokenOk: false, subs: [] }), w.owner);
+    if (!r.ok) throw new Error("no deberia fallar");
+    expect(r.checks[0]).toMatchObject({ tokenValid: false });
+    expect(r.checks[0]!.problems[0]).toContain("vuelve a conectar");
+    expect(await checkSocialChannels(dbs.app.db, checkDeps({ tokenOk: true, subs: [] }), w.agent)).toEqual({ ok: false, error: "forbidden" });
   });
 });

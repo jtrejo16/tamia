@@ -1,4 +1,4 @@
-import { sealChannelCredentials } from "@empleado/channels";
+import { openChannelCredentials, sealChannelCredentials } from "@empleado/channels";
 import { auditLog, channels, withTenant, type Database } from "@empleado/db";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -178,8 +178,8 @@ export async function connectSocial(
   }
 
   const targets: Array<{ type: "messenger" | "instagram"; externalId: string; meta: Record<string, string> }> = [];
-  if (input.messenger) targets.push({ type: "messenger", externalId: input.page.pageId, meta: { name: input.page.name } });
-  if (wantIg) targets.push({ type: "instagram", externalId: input.page.instagram!.id, meta: { name: input.page.name, ...(input.page.instagram!.username ? { username: input.page.instagram!.username } : {}) } });
+  if (input.messenger) targets.push({ type: "messenger", externalId: input.page.pageId, meta: { name: input.page.name, pageId: input.page.pageId } });
+  if (wantIg) targets.push({ type: "instagram", externalId: input.page.instagram!.id, meta: { name: input.page.name, pageId: input.page.pageId, ...(input.page.instagram!.username ? { username: input.page.instagram!.username } : {}) } });
 
   try {
     await withTenant(db, scope(ctx), async (tx) => {
@@ -224,4 +224,67 @@ export async function disconnectSocial(db: Database, ctx: PanelContext, type: un
     await tx.insert(auditLog).values({ tenantId: ctx.tenantId, userId: ctx.userId, action: "channel.disconnect", entity: "channel", entityId: c.id });
     return { ok: true as const };
   });
+}
+
+export interface SocialCheck {
+  type: "messenger" | "instagram";
+  /** La clave guardada todavia es valida para Meta. */
+  tokenValid: boolean;
+  /** Nuestra app esta suscrita a la pagina y estos son sus campos. */
+  subscribed: boolean;
+  fields: string[];
+  /** Que falta o que arreglar, en palabras simples. Vacio si todo esta bien. */
+  problems: string[];
+}
+
+/**
+ * Pregunta a Meta, con la clave guardada, si la pagina sigue bien conectada: clave valida y app
+ * suscrita a los campos que necesitamos (messages). Solo dueño. No cambia nada.
+ */
+export async function checkSocialChannels(db: Database, d: SocialDeps, ctx: PanelContext): Promise<Success<{ checks: SocialCheck[] }> | Failure<"forbidden">> {
+  if (!can(ctx.role, "configure")) return fail("forbidden");
+  const rows = (await withTenant(db, scope(ctx), (tx) => tx.select().from(channels))).filter(
+    (c) => (c.type === "messenger" || c.type === "instagram") && c.credentialsEnc !== null,
+  );
+  const checks: SocialCheck[] = [];
+  for (const c of rows) {
+    const check: SocialCheck = { type: c.type as "messenger" | "instagram", tokenValid: false, subscribed: false, fields: [], problems: [] };
+    let token: string;
+    try {
+      token = openChannelCredentials(c.credentialsEnc!, d.key, ctx.tenantId, c.id).accessToken;
+    } catch {
+      check.problems.push("No se pudo leer la clave guardada. Desconecta y vuelve a conectar.");
+      checks.push(check);
+      continue;
+    }
+    const pageId = c.type === "messenger" ? c.externalId : ((c.meta ?? {}) as { pageId?: string }).pageId;
+    try {
+      await call(d, "GET", `${encodeURIComponent(c.externalId)}?fields=id`, { token });
+      check.tokenValid = true;
+    } catch (e) {
+      check.problems.push(
+        e instanceof MetaCallError && e.status > 0 && e.status < 500
+          ? "Meta rechazó la clave guardada (venció o se revocó). Desconecta y vuelve a conectar."
+          : "No se pudo consultar a Meta en este momento.",
+      );
+      checks.push(check);
+      continue;
+    }
+    if (!pageId) {
+      check.problems.push("No se conoce la página de esta cuenta: desconecta y vuelve a conectar para poder comprobarla.");
+    } else {
+      try {
+        const subs = await call(d, "GET", `${encodeURIComponent(pageId)}/subscribed_apps`, { token });
+        const ours = (Array.isArray(subs.data) ? subs.data : []).find((a: any) => String(a.id) === d.appId);
+        check.subscribed = Boolean(ours);
+        check.fields = Array.isArray(ours?.subscribed_fields) ? ours.subscribed_fields.map(String) : [];
+        if (!ours) check.problems.push("La página no está suscrita a tu aplicación: Meta no enviará sus mensajes. Desconecta y vuelve a conectar.");
+        else if (!check.fields.includes("messages")) check.problems.push("La suscripción no incluye el campo «messages»: no llegarán mensajes. Vuelve a conectar la página.");
+      } catch {
+        check.problems.push("No se pudo comprobar la suscripción de la página.");
+      }
+    }
+    checks.push(check);
+  }
+  return { ok: true, checks };
 }
