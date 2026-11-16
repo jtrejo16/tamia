@@ -71,6 +71,11 @@ export function toWhatsAppText(text: string): string {
     .trim();
 }
 
+/** Messenger e Instagram no interpretan *negritas*: se quitan los marcadores para que no se vean los asteriscos. */
+export function toPlainText(text: string): string {
+  return toWhatsAppText(text).replace(/\*([^*\n]+)\*/g, "$1");
+}
+
 /** "2027-03-02" -> fecha local, o null si no es valida. */
 export function parseDateKey(value: string): LocalDate | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());

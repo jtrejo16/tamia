@@ -1,6 +1,7 @@
 import {
   agentConfigs,
   approvals,
+  channels,
   contacts,
   conversationMemory,
   conversations,
@@ -20,7 +21,7 @@ import {
   type LLMProvider,
 } from "@empleado/llm";
 import { and, count, desc, eq, gt } from "drizzle-orm";
-import { formatLocal, toWhatsAppText } from "./format";
+import { formatLocal, toPlainText, toWhatsAppText } from "./format";
 import { MAX_RAW_HISTORY, maybeSummarize, messageText } from "./memory";
 import { GENERIC_PACK, loadPack, type Pack } from "./pack";
 import { decideOutput, modeFor, type Autonomy } from "./policy";
@@ -134,6 +135,7 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
     if (!conversation) throw new Error("Conversacion no encontrada");
     const [contact] = await tx.select().from(contacts).where(eq(contacts.id, conversation.contactId));
     const [tenant] = await tx.select().from(tenants).where(eq(tenants.id, tenantId));
+    const [channelRow] = await tx.select({ type: channels.type }).from(channels).where(eq(channels.id, conversation.channelId));
     const [config] = await tx.select().from(agentConfigs).where(eq(agentConfigs.tenantId, tenantId));
     if (!contact || !tenant) throw new Error("Contacto o negocio no encontrado");
     if (!config) throw new Error("El negocio no tiene configuracion de agente");
@@ -199,6 +201,7 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
       contact,
       tenant,
       config,
+      channelType: channelRow?.type ?? "whatsapp",
       inboundCount: Number(inboundCount),
       summary: memory?.summary ?? "",
       history: recent.reverse(),
@@ -243,7 +246,11 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
     mode,
     contactMemory: [
       contact.displayName ? `nombre: ${contact.displayName}` : "",
-      contact.phoneE164 ? `teléfono: ${contact.phoneE164} (ya lo tienes, no lo pidas)` : "",
+      contact.phoneE164
+        ? `teléfono: ${contact.phoneE164} (ya lo tienes, no lo pidas)`
+        : loaded.channelType !== "whatsapp"
+          ? `teléfono: AÚN NO LO TIENES (escribe por ${loaded.channelType === "instagram" ? "Instagram" : "Messenger"}). Antes de agendar pídele su número de WhatsApp a 10 dígitos y guárdalo con guardar_datos_contacto (campo telefono): los recordatorios de cita salen por WhatsApp.`
+          : "",
       contact.email ? `correo: ${contact.email}` : "",
       contact.tags.length ? `etiquetas: ${contact.tags.join(", ")}` : "",
       ...profileEntries.map(([k, v]) => `${k}: ${String(v)}`),
@@ -330,7 +337,7 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
   if (!finalText || failure) {
     finalText = failure && !ctx.escalationMessage ? TECHNICAL_ERROR_REPLY : (ctx.escalationMessage ?? TECHNICAL_ERROR_REPLY);
   }
-  finalText = toWhatsAppText(finalText).slice(0, MAX_REPLY_CHARS);
+  finalText = (loaded.channelType === "whatsapp" ? toWhatsAppText(finalText) : toPlainText(finalText)).slice(0, MAX_REPLY_CHARS);
 
   // 4) Politica de salida segun el nivel de autonomia.
   const decision = decideOutput({

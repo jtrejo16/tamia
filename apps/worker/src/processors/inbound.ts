@@ -45,21 +45,24 @@ export function createInboundProcessor(deps: InboundDeps) {
       return { status: "skipped", reason: "rate_limited" };
     }
 
-    const ref = await ensureConversation(deps.db, {
-      tenantId,
-      channelId,
-      phone: `+${message.from}`,
-      profileName: job.contactName,
-    });
+    // WhatsApp identifica al cliente por su telefono; Messenger e Instagram, por el id que da la red.
+    const social = job.channelType === "messenger" || job.channelType === "instagram";
+    const ref = await ensureConversation(
+      deps.db,
+      social
+        ? { tenantId, channelId, identity: { externalId: message.from }, profileName: job.contactName }
+        : { tenantId, channelId, phone: `+${message.from}`, profileName: job.contactName },
+    );
 
-    if (deps.markRead) void deps.markRead(job).catch(() => {});
+    // Las palomitas azules son de WhatsApp.
+    if (deps.markRead && !social) void deps.markRead(job).catch(() => {});
 
     // Un mensaje a la vez por conversacion: si el cliente manda tres seguidos, el agente
     // contesta en orden y ve lo que ya respondio.
     return deps.lock.withLock(`conv:${ref.conversationId}`, async () => {
       // Botones de un recordatorio de cita: "Confirmo" se resuelve sin IA; "Reagendar" va al agente.
       let text = message.text;
-      const reminderReply = message.type === "interactive" ? parseReminderPayload(message.replyPayload) : null;
+      const reminderReply = !social && message.type === "interactive" ? parseReminderPayload(message.replyPayload) : null;
       if (reminderReply) {
         const outcome = await handleReminderReply(
           { db: deps.db, enqueueOutbound: deps.enqueueOutbound, now: deps.now, log: deps.log },
@@ -88,7 +91,7 @@ export function createInboundProcessor(deps: InboundDeps) {
         conversationId: ref.conversationId,
         text,
         type: message.type,
-        mediaUrl: message.mediaId ? `wa-media:${message.mediaId}` : undefined,
+        mediaUrl: message.mediaUrl ?? (message.mediaId ? `wa-media:${message.mediaId}` : undefined),
         externalMessageId: message.id,
         now: deps.now?.(),
       });

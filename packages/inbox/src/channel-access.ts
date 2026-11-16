@@ -4,6 +4,9 @@ import { eq } from "drizzle-orm";
 
 export interface ChannelAccess {
   channelId: string;
+  /** whatsapp | messenger | instagram */
+  type: string;
+  /** phone_number_id (WhatsApp), id de la pagina (Messenger) o de la cuenta (Instagram). */
   phoneNumberId: string;
   /** Cuenta de WhatsApp Business (la dueña de las plantillas). */
   wabaId: string | null;
@@ -34,6 +37,7 @@ export async function loadChannelAccess(
   }
   return {
     channelId,
+    type: channel.type,
     phoneNumberId: channel.externalId,
     wabaId: channel.wabaId,
     status: channel.status,

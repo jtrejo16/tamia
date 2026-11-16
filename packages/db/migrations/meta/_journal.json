@@ -71,6 +71,20 @@
       "when": 1794840540065,
       "tag": "0009_billing_apply_fix",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794842016581,
+      "tag": "0010_contact_identities",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794842020239,
+      "tag": "0011_contact_identities_rls",
+      "breakpoints": true
     }
   ]
 }

@@ -7,3 +7,5 @@ export * from "./whatsapp/window";
 export * from "./whatsapp/templates";
 export * from "./whatsapp/admin";
 export * from "./whatsapp/credentials";
+export * from "./social/payload";
+export * from "./social/client";

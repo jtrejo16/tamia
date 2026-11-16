@@ -1,4 +1,4 @@
-import { WhatsAppClient } from "@empleado/channels";
+import { SocialClient, WhatsAppClient } from "@empleado/channels";
 import { createDb, type DbHandle } from "@empleado/db";
 import { createLLMProvider, type LLMProvider } from "@empleado/llm";
 import type { Redis } from "ioredis";
@@ -61,13 +61,21 @@ export function startSystem(config: WorkerConfig, system: WorkerSystem): () => v
   const lock = new RedisLock(redis, config.queuePrefix);
   const limiter = new RedisRateLimiter(redis, config.queuePrefix);
 
-  const makeSender = (access: { accessToken: string; phoneNumberId: string }): Sender =>
-    new WhatsAppClient({
-      accessToken: access.accessToken,
-      phoneNumberId: access.phoneNumberId,
-      apiVersion: config.graphApiVersion,
-      baseUrl: config.graphBaseUrl,
-    });
+  const makeSender = (access: { accessToken: string; phoneNumberId: string; channelType: string }): Sender =>
+    access.channelType === "messenger" || access.channelType === "instagram"
+      ? new SocialClient({
+          accessToken: access.accessToken,
+          accountId: access.phoneNumberId,
+          channelType: access.channelType,
+          apiVersion: config.graphApiVersion,
+          baseUrl: config.graphBaseUrl,
+        })
+      : new WhatsAppClient({
+          accessToken: access.accessToken,
+          phoneNumberId: access.phoneNumberId,
+          apiVersion: config.graphApiVersion,
+          baseUrl: config.graphBaseUrl,
+        });
 
   const inbound = createInboundProcessor({
     db: db.db,

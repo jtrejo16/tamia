@@ -1,10 +1,15 @@
-import { channels, contacts, conversations, withTenant, type Database } from "@empleado/db";
+import { channels, contactIdentities, contacts, conversations, withTenant, type Database } from "@empleado/db";
 import { and, asc, desc, eq, ne } from "drizzle-orm";
 
 export interface EnsureConversationInput {
   tenantId: string;
-  /** Telefono del cliente en formato E.164, por ejemplo +529991234567. */
-  phone: string;
+  /** Telefono del cliente en formato E.164, por ejemplo +529991234567. Obligatorio salvo con `identity`. */
+  phone?: string;
+  /**
+   * Cliente de Messenger/Instagram: se identifica por el id que da la red (PSID/IGSID), unico por
+   * pagina o cuenta, y puede no tener telefono todavia.
+   */
+  identity?: { externalId: string };
   /** Nombre confirmado del cliente (el agente lo pide y lo guarda aparte). */
   name?: string;
   /** Nombre del perfil de WhatsApp (apodo): se guarda en el perfil, no como nombre real. */
@@ -41,20 +46,54 @@ export async function ensureConversation(
       .limit(1);
     if (!channel) throw new Error("El negocio no tiene un canal activo conectado");
 
-    let [contact] = await tx.select().from(contacts).where(eq(contacts.phoneE164, input.phone));
-    if (!contact) {
+    let contact: typeof contacts.$inferSelect | undefined;
+    if (input.identity) {
+      const find = async () => {
+        const [row] = await tx
+          .select({ c: contacts })
+          .from(contactIdentities)
+          .innerJoin(contacts, eq(contacts.id, contactIdentities.contactId))
+          .where(and(eq(contactIdentities.channelId, channel.id), eq(contactIdentities.externalId, input.identity!.externalId)));
+        return row?.c;
+      };
+      contact = await find();
+      if (!contact) {
+        const [created] = await tx
+          .insert(contacts)
+          .values({
+            tenantId: input.tenantId,
+            displayName: input.name ?? null,
+            profile: input.profileName ? { [`${channel.type}_name`]: input.profileName } : {},
+          })
+          .returning();
+        // Carrera: dos mensajes del mismo cliente nuevo a la vez. El indice unico decide quien gana.
+        const claimed = await tx
+          .insert(contactIdentities)
+          .values({ tenantId: input.tenantId, contactId: created!.id, channelType: channel.type, channelId: channel.id, externalId: input.identity.externalId })
+          .onConflictDoNothing()
+          .returning({ id: contactIdentities.id });
+        if (claimed.length === 0) {
+          await tx.delete(contacts).where(eq(contacts.id, created!.id));
+          contact = await find();
+        } else contact = created;
+      }
+    } else {
+      if (!input.phone) throw new Error("Falta el telefono o la identidad del cliente");
+      [contact] = await tx.select().from(contacts).where(eq(contacts.phoneE164, input.phone));
+    }
+    if (!input.identity && !contact) {
       // Carrera: dos mensajes del mismo cliente nuevo a la vez. El indice unico decide.
       await tx
         .insert(contacts)
         .values({
           tenantId: input.tenantId,
-          phoneE164: input.phone,
+          phoneE164: input.phone!,
           displayName: input.name ?? null,
           profile: input.profileName ? { whatsapp_name: input.profileName } : {},
         })
         .onConflictDoNothing();
-      [contact] = await tx.select().from(contacts).where(eq(contacts.phoneE164, input.phone));
-    } else if (input.profileName && !(contact.profile as Record<string, unknown>)?.whatsapp_name) {
+      [contact] = await tx.select().from(contacts).where(eq(contacts.phoneE164, input.phone!));
+    } else if (!input.identity && contact && input.profileName && !(contact.profile as Record<string, unknown>)?.whatsapp_name) {
       await tx
         .update(contacts)
         .set({ profile: { ...(contact.profile as Record<string, unknown>), whatsapp_name: input.profileName } })

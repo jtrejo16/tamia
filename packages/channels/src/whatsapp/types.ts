@@ -13,6 +13,8 @@ export interface InboundMessage {
   /** Texto que "lee" el agente: cuerpo, leyenda o descripcion. Puede ser vacio (audio). */
   text: string;
   mediaId?: string;
+  /** Messenger/Instagram entregan el enlace del archivo directamente (WhatsApp usa mediaId). */
+  mediaUrl?: string;
   mimeType?: string;
   /** id del boton o de la fila de lista que toco el cliente. */
   replyPayload?: string;
@@ -44,6 +46,9 @@ export interface ParsedWebhook {
 export interface InboundJobData {
   tenantId: string;
   channelId: string;
+  /** Sin valor = whatsapp (trabajos encolados antes de existir los demas canales). */
+  channelType?: "whatsapp" | "messenger" | "instagram";
+  /** phone_number_id (WhatsApp), id de la pagina (Messenger) o de la cuenta (Instagram). */
   phoneNumberId: string;
   contactName?: string;
   message: InboundMessage;

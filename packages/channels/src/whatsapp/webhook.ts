@@ -1,3 +1,4 @@
+import { isSocialWebhookObject, parseSocialWebhook, type SocialChannelType } from "../social/payload";
 import { parseWebhookPayload } from "./payload";
 import { verifySignature } from "./signature";
 import type { InboundJobData, StatusJobData } from "./types";
@@ -11,6 +12,8 @@ export interface WebhookDeps {
   appSecret: string;
   /** phone_number_id -> negocio/canal. Nulo si el numero no esta registrado en el sistema. */
   resolveChannel(phoneNumberId: string): Promise<{ tenantId: string; channelId: string } | null>;
+  /** (tipo, id de la pagina o cuenta) -> negocio/canal. Si falta, Messenger e Instagram se ignoran. */
+  resolveSocialChannel?(type: SocialChannelType, accountId: string): Promise<{ tenantId: string; channelId: string } | null>;
   enqueueInbound(job: InboundJobData): Promise<void>;
   enqueueStatus(job: StatusJobData): Promise<void>;
   log?: (event: string, data?: Record<string, unknown>) => void;
@@ -67,6 +70,33 @@ export function createWhatsAppWebhook(deps: WebhookDeps): WebhookHandlers {
         json = JSON.parse(raw);
       } catch {
         return text("Bad request", 400);
+      }
+
+      // Messenger e Instagram llegan por el mismo webhook, con otro "object".
+      if (isSocialWebhookObject((json as { object?: unknown } | null)?.object)) {
+        if (!deps.resolveSocialChannel) return text("OK", 200);
+        const social = parseSocialWebhook(json);
+        try {
+          for (const item of social.messages) {
+            const channel = await deps.resolveSocialChannel(item.channelType, item.accountId);
+            if (!channel) {
+              log("webhook.unknown_account", { channelType: item.channelType, accountId: item.accountId });
+              continue;
+            }
+            await deps.enqueueInbound({
+              tenantId: channel.tenantId,
+              channelId: channel.channelId,
+              channelType: item.channelType,
+              phoneNumberId: item.accountId,
+              message: item.message,
+            });
+          }
+        } catch (error) {
+          log("webhook.enqueue_failed", { error: error instanceof Error ? error.message : String(error) });
+          return text("Temporary error", 500);
+        }
+        log("webhook.accepted", { channelType: (json as { object: string }).object, messages: social.messages.length, ignored: social.ignored });
+        return text("OK", 200);
       }
 
       // 2) Clasificar y encolar. Un error al encolar devuelve 500 para que Meta REINTENTE.

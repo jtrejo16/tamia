@@ -284,6 +284,7 @@ const schemas = {
   guardar_datos_contacto: z.object({
     nombre: z.string().trim().min(2).max(120).optional().describe("Nombre completo"),
     correo: z.string().trim().email().max(160).optional(),
+    telefono: z.string().trim().min(8).max(20).optional().describe("Teléfono de WhatsApp del cliente (10 dígitos en México)"),
     datos: z
       .record(z.string().max(40), z.string().max(200))
       .optional()
@@ -311,6 +312,14 @@ interface ToolSpec<N extends ToolName> {
 type ToolTable = { [N in ToolName]: ToolSpec<N> };
 
 // ----------------------------------------------------------------- herramientas
+
+/** "998 123 4567" / "+52 1 998..." -> "+529981234567"; null si no parece un telefono mexicano valido. */
+export function normalizePhone(raw: string): string | null {
+  let d = raw.replace(/\D/g, "");
+  if (d.length === 13 && d.startsWith("521")) d = d.slice(3);
+  else if (d.length === 12 && d.startsWith("52")) d = d.slice(2);
+  return d.length === 10 ? `+52${d}` : null;
+}
 
 export const TOOLS: ToolTable = {
   consultar_servicios: {
@@ -655,7 +664,13 @@ export const TOOLS: ToolTable = {
       "Guarda datos que el cliente te dio: nombre completo, correo u otros datos durables (seguro, preferencias). Úsala en cuanto los tengas.",
     mutating: false,
     async execute(args, ctx) {
-      if (!args.nombre && !args.correo && !args.datos) return { error: "nada_que_guardar" };
+      if (!args.nombre && !args.correo && !args.datos && !args.telefono) return { error: "nada_que_guardar" };
+      let phone: string | undefined;
+      if (args.telefono) {
+        phone = normalizePhone(args.telefono) ?? undefined;
+        if (!phone) return { error: "telefono_invalido", detalle: "Pide el número a 10 dígitos (lada + número)." };
+        if (ctx.contact.phoneE164 && ctx.contact.phoneE164 !== phone) return { error: "telefono_ya_registrado", detalle: "Este cliente ya tiene otro teléfono guardado; un humano debe cambiarlo." };
+      }
       const updated = await withTenant(ctx.db, { tenantId: ctx.tenantId }, async (tx) => {
         const profile = { ...(ctx.contact.profile ?? {}) } as Record<string, unknown>;
         for (const [k, v] of Object.entries(args.datos ?? {})) {
@@ -667,15 +682,25 @@ export const TOOLS: ToolTable = {
           .set({
             ...(args.nombre ? { displayName: args.nombre } : {}),
             ...(args.correo ? { email: args.correo } : {}),
+            ...(phone ? { phoneE164: phone } : {}),
             profile,
             updatedAt: new Date(),
           })
           .where(eq(contacts.id, ctx.contactId))
           .returning();
         return row!;
+      }).catch((error: unknown) => {
+        // Indice unico (negocio, telefono): ese numero ya es de OTRO contacto. NO se fusionan
+        // historiales: quien escribe por Instagram no debe heredar los datos de otra persona.
+        const code = (error as { code?: string; cause?: { code?: string } }).code ?? (error as { cause?: { code?: string } }).cause?.code;
+        if (code === "23505" && phone) return "telefono_en_uso" as const;
+        throw error;
       });
+      if (updated === "telefono_en_uso") {
+        return { error: "telefono_en_uso", detalle: "Ese número ya está asociado a otro cliente. Dile que un asesor lo revisará y usa escalar_a_humano." };
+      }
       ctx.contact = updated; // las siguientes herramientas del turno ya ven el nombre
-      return { ok: true, nombre: updated.displayName, correo: updated.email };
+      return { ok: true, nombre: updated.displayName, correo: updated.email, telefono: updated.phoneE164 };
     },
   },
 

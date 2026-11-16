@@ -15,6 +15,7 @@ export function createHandlers(
     verifyToken: secrets.verifyToken,
     appSecret: secrets.appSecret,
     resolveChannel: (phoneNumberId) => resolveChannel(system.db.db, "whatsapp", phoneNumberId),
+    resolveSocialChannel: (type, accountId) => resolveChannel(system.db.db, type, accountId),
     enqueueInbound: system.enqueue.inbound,
     enqueueStatus: system.enqueue.status,
     log,

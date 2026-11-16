@@ -2,6 +2,7 @@ import { WhatsAppApiError, decodeTemplateMessage, isWithinServiceWindow } from "
 import type { OutboundJobData } from "@empleado/channels";
 import {
   channels,
+  contactIdentities,
   contacts,
   conversations,
   messages,
@@ -33,7 +34,7 @@ export interface OutboundDeps {
   db: Database;
   /** Llave AES-256 para descifrar los tokens de los canales. */
   key: Buffer;
-  makeSender(access: { accessToken: string; phoneNumberId: string }): Sender;
+  makeSender(access: { accessToken: string; phoneNumberId: string; channelType: string }): Sender;
   lock: Lock;
   now?: () => Date;
   log?: Logger;
@@ -65,12 +66,25 @@ export function createOutboundProcessor(deps: OutboundDeps) {
 
   async function sendOne(
     m: Message,
-    ctx: { tenantId: string; conversation: Conversation; contact: Contact; access: ChannelAccess | null; attempt: Attempt },
+    ctx: {
+      tenantId: string;
+      conversation: Conversation;
+      contact: Contact;
+      /** Id del cliente en Messenger/Instagram (PSID/IGSID), si el canal es de ese tipo. */
+      recipientId: string | null;
+      access: ChannelAccess | null;
+      attempt: Attempt;
+    },
   ): Promise<"sent" | "failed"> {
-    const { tenantId, conversation, contact, access, attempt } = ctx;
+    const { tenantId, conversation, contact, recipientId, access, attempt } = ctx;
+    const isWhatsApp = !access || access.type === "whatsapp";
     const now = deps.now?.() ?? new Date();
 
     // Las plantillas son justamente lo que SI se puede enviar fuera de la ventana de 24 h.
+    if (m.type === "template" && !isWhatsApp) {
+      await mark(tenantId, m.id, { status: "failed", error: "plantilla_no_soportada: las plantillas solo existen en WhatsApp" });
+      return "failed";
+    }
     if (m.type !== "template" && !isWithinServiceWindow(conversation.lastInboundAt, now)) {
       await mark(tenantId, m.id, { status: "failed", error: "fuera_de_ventana_24h: solo se pueden enviar plantillas" });
       return "failed";
@@ -79,13 +93,17 @@ export function createOutboundProcessor(deps: OutboundDeps) {
       await mark(tenantId, m.id, { status: "failed", error: "sin_credenciales: el canal no tiene token de WhatsApp" });
       return "failed";
     }
-    if (!contact.phoneE164) {
+    if (isWhatsApp && !contact.phoneE164) {
       await mark(tenantId, m.id, { status: "failed", error: "sin_telefono: el contacto no tiene numero" });
       return "failed";
     }
+    if (!isWhatsApp && !recipientId) {
+      await mark(tenantId, m.id, { status: "failed", error: "sin_identidad: el contacto no tiene id en este canal" });
+      return "failed";
+    }
 
-    const to = contact.phoneE164.replace(/\D/g, "");
-    const sender = deps.makeSender({ accessToken: access.accessToken, phoneNumberId: access.phoneNumberId });
+    const to = isWhatsApp ? contact.phoneE164!.replace(/\D/g, "") : recipientId!;
+    const sender = deps.makeSender({ accessToken: access.accessToken, phoneNumberId: access.phoneNumberId, channelType: access.type });
 
     try {
       let wamid: string;
@@ -195,7 +213,13 @@ export function createOutboundProcessor(deps: OutboundDeps) {
           )
           .orderBy(asc(messages.createdAt), asc(messages.type))
           .limit(10);
-        return { conversation, contact, pending };
+        const [identity] = contact
+          ? await tx
+              .select({ externalId: contactIdentities.externalId })
+              .from(contactIdentities)
+              .where(and(eq(contactIdentities.contactId, contact.id), eq(contactIdentities.channelId, first.channelId)))
+          : [];
+        return { conversation, contact, pending, recipientId: identity?.externalId ?? null };
       });
       if (!loaded.conversation || !loaded.contact) {
         await mark(tenantId, first.id, { status: "failed", error: "conversacion_no_encontrada" });
@@ -210,6 +234,7 @@ export function createOutboundProcessor(deps: OutboundDeps) {
           tenantId,
           conversation: loaded.conversation,
           contact: loaded.contact,
+          recipientId: loaded.recipientId,
           access,
           attempt,
         });

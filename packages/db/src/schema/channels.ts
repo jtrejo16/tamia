@@ -118,6 +118,34 @@ export const contacts = pgTable(
   (t) => [uniqueIndex("contacts_tenant_phone_uq").on(t.tenantId, t.phoneE164)],
 );
 
+/**
+ * Identidad de un cliente en un canal que NO usa telefono (Messenger: PSID, Instagram: IGSID).
+ * Los clientes de WhatsApp se identifican por contacts.phone_e164 y no necesitan fila aqui.
+ */
+export const contactIdentities = pgTable(
+  "contact_identities",
+  {
+    id: pk(),
+    tenantId: tenantRef(),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    /** messenger | instagram */
+    channelType: text("channel_type").notNull(),
+    /** PSID o IGSID: es unico POR PAGINA/CUENTA, por eso se liga tambien al canal. */
+    channelId: uuid("channel_id")
+      .notNull()
+      .references(() => channels.id, { onDelete: "cascade" }),
+    externalId: text("external_id").notNull(),
+    handle: text("handle"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("contact_identities_channel_external_uq").on(t.channelId, t.externalId),
+    index("contact_identities_contact_idx").on(t.contactId),
+  ],
+);
+
 export const conversations = pgTable(
   "conversations",
   {

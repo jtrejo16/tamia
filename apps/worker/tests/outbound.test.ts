@@ -22,7 +22,7 @@ async function setup(options: Parameters<typeof makeWorld>[1] = {}) {
   const w = await makeWorld(dbs.owner, options);
   worlds.push(w);
   const sender = new FakeSender();
-  const made: Array<{ accessToken: string; phoneNumberId: string }> = [];
+  const made: Array<{ accessToken: string; phoneNumberId: string; channelType: string }> = [];
   const process = createOutboundProcessor({
     db: dbs.app.db,
     key: KEY,
@@ -48,7 +48,7 @@ describe("procesador de envios", () => {
 
     expect(result).toMatchObject({ status: "processed", sent: [m.id], failed: [] });
     expect(sender.calls).toEqual([{ kind: "text", to: w.waId, body: "Hola Carlos" }]);
-    expect(made[0]).toEqual({ accessToken: "EAAG-token-de-prueba", phoneNumberId: w.phoneNumberId });
+    expect(made[0]).toEqual({ accessToken: "EAAG-token-de-prueba", phoneNumberId: w.phoneNumberId, channelType: "whatsapp" });
     const row = await get(m.id);
     expect(row.status).toBe("sent");
     expect(row.externalId).toMatch(/^wamid\.OUT/);
