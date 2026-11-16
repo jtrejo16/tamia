@@ -18,6 +18,7 @@
     "@empleado/channels": "workspace:*",
     "@empleado/db": "workspace:*",
     "@empleado/llm": "workspace:*",
+    "@empleado/queue": "workspace:*",
     "@empleado/shared": "workspace:*",
     "bullmq": "^5.0.0",
     "drizzle-orm": "^0.44.0",

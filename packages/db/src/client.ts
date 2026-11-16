@@ -40,6 +40,29 @@ export async function withTenant<T>(
   });
 }
 
+/**
+ * Ejecuta `fn` como un USUARIO, sin negocio fijado. Sirve para listar sus membresias al
+ * iniciar sesion (la politica membership_self deja ver solo las propias).
+ */
+export async function withUser<T>(db: Database, userId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('app.user_id', ${userId}, true)`);
+    return fn(tx);
+  });
+}
+
+/** Busca un usuario por correo ANTES de saber quien es (funcion SECURITY DEFINER). */
+export async function authFindUser(
+  db: Database,
+  email: string,
+): Promise<{ id: string; email: string; passwordHash: string | null } | null> {
+  const rows = await db.execute<{ id: string; email: string; password_hash: string | null }>(
+    sql`select * from auth_find_user(${email})`,
+  );
+  const row = rows[0];
+  return row ? { id: row.id, email: row.email, passwordHash: row.password_hash } : null;
+}
+
 /** Mensajes salientes que llevan mas de `olderThanSeconds` en cola (barrido de recuperacion). */
 export async function staleQueuedMessages(
   db: Database,

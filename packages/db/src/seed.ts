@@ -1,3 +1,4 @@
+import { hashPassword } from "@empleado/shared";
 import { eq } from "drizzle-orm";
 import { createDb } from "./client";
 import { loadEnv, requireEnv } from "./env";
@@ -22,6 +23,21 @@ const FAQ = `Preguntas frecuentes - Clinica Dental Sonrisa
 ¿Cuál es la política de cancelación? Avise con al menos 12 horas de anticipación; después de 15 minutos de retraso la cita se reprograma.`;
 
 try {
+  // PROTECCION: este seed BORRA el negocio demo y todo lo suyo. Si ya tiene un canal de
+  // WhatsApp con token guardado, se niega a menos que se pida expresamente.
+  const [existing] = await db.select().from(s.tenants).where(eq(s.tenants.slug, SLUG));
+  if (existing && process.env.SEED_FORCE !== "1") {
+    const withToken = await db.select({ id: s.channels.id }).from(s.channels).where(eq(s.channels.tenantId, existing.id));
+    const hasCredentials = (
+      await db.select({ c: s.channels.credentialsEnc }).from(s.channels).where(eq(s.channels.tenantId, existing.id))
+    ).some((r) => r.c !== null);
+    if (hasCredentials) {
+      throw new Error(
+        `El negocio "${SLUG}" ya existe y tiene un canal con token (${withToken.length} canal/es). Correr el seed lo borraría todo. Si de verdad quieres reiniciarlo: SEED_FORCE=1 pnpm db:seed`,
+      );
+    }
+  }
+
   // Idempotente: borra el demo anterior (las FK en cascada limpian todo lo del tenant).
   await db.delete(s.tenants).where(eq(s.tenants.slug, SLUG));
   await db.delete(s.users).where(eq(s.users.email, DEMO_EMAIL));
@@ -66,9 +82,15 @@ try {
   if (!tenant) throw new Error("No se pudo crear el tenant demo");
   const tenantId = tenant.id;
 
+  const demoPassword = process.env.DEMO_OWNER_PASSWORD;
   const [owner] = await db
     .insert(s.users)
-    .values({ email: DEMO_EMAIL, name: "Dueño Demo" })
+    .values({
+      email: DEMO_EMAIL,
+      name: "Dueño Demo",
+      // Sin DEMO_OWNER_PASSWORD el usuario no podra entrar al panel hasta fijarla con set-password.
+      passwordHash: demoPassword ? await hashPassword(demoPassword) : null,
+    })
     .returning();
   if (!owner) throw new Error("No se pudo crear el usuario demo");
   await db.insert(s.memberships).values({ tenantId, userId: owner.id, role: "owner" });

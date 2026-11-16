@@ -10,6 +10,7 @@ import { createInboundProcessor } from "./processors/inbound";
 import { createOutboundProcessor, type Sender } from "./processors/outbound";
 import { createStatusProcessor } from "./processors/status";
 import { RedisRateLimiter } from "./ratelimit";
+import { HEARTBEAT_INTERVAL_MS, workerBeat } from "@empleado/queue";
 import { createConnection, createEnqueuers, createQueues, type Enqueuers, type Queues } from "./queues";
 import { startWorkers, type RunningWorkers } from "./workers";
 
@@ -100,5 +101,13 @@ export function startSystem(config: WorkerConfig, system: WorkerSystem): () => v
       .catch((e) => log("sweeper.error", { error: e instanceof Error ? e.message : String(e) }));
   }, 30_000);
 
-  return () => clearInterval(sweep);
+  // Latido: el panel avisa a las personas si el worker deja de dar senales de vida.
+  const beat = () => workerBeat(redis, config.queuePrefix).catch(() => {});
+  void beat();
+  const heartbeat = setInterval(beat, HEARTBEAT_INTERVAL_MS);
+
+  return () => {
+    clearInterval(sweep);
+    clearInterval(heartbeat);
+  };
 }

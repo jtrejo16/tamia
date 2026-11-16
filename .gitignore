@@ -4,6 +4,8 @@ dist/
 build/
 coverage/
 .turbo/
+*.tsbuildinfo
+next-env.d.ts
 
 # Secretos y entorno
 .env
