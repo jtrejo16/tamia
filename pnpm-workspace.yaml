@@ -1,0 +1,7 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Solo esbuild puede ejecutar scripts de instalacion (descarga su binario nativo).
+allowBuilds:
+  esbuild: true

@@ -1,0 +1,20 @@
+{
+  "name": "empleado-digital",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Empleado digital con IA para negocios locales en México (WhatsApp + agenda).",
+  "packageManager": "pnpm@12.21.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f",
+    "db:migrate": "pnpm --filter @empleado/db migrate",
+    "db:seed": "pnpm --filter @empleado/db seed",
+    "db:generate": "pnpm --filter @empleado/db generate",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck"
+  }
+}

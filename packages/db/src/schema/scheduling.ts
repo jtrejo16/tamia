@@ -1,0 +1,120 @@
+import {
+  boolean,
+  date,
+  index,
+  integer,
+  pgEnum,
+  pgTable,
+  smallint,
+  text,
+  time,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
+import { bytea, pk, tenantRef, timestamps } from "./core";
+import { contacts, conversations } from "./channels";
+
+export const appointmentStatusEnum = pgEnum("appointment_status", [
+  "pending",
+  "confirmed",
+  "cancelled",
+  "no_show",
+  "done",
+]);
+
+export const services = pgTable("services", {
+  id: pk(),
+  tenantId: tenantRef(),
+  name: text("name").notNull(),
+  description: text("description"),
+  durationMin: integer("duration_min").notNull(),
+  bufferMin: integer("buffer_min").notNull().default(0),
+  /** Centavos, para evitar errores de redondeo. */
+  priceCents: integer("price_cents"),
+  currency: text("currency").notNull().default("MXN"),
+  requiresDeposit: boolean("requires_deposit").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  ...timestamps,
+});
+
+export const staff = pgTable("staff", {
+  id: pk(),
+  tenantId: tenantRef(),
+  name: text("name").notNull(),
+  roleLabel: text("role_label"),
+  calendarProvider: text("calendar_provider"), // google | cal_com
+  calendarId: text("calendar_id"),
+  credentialsEnc: bytea("credentials_enc"),
+  active: boolean("active").notNull().default(true),
+  ...timestamps,
+});
+
+export const staffServices = pgTable(
+  "staff_services",
+  {
+    id: pk(),
+    tenantId: tenantRef(),
+    staffId: uuid("staff_id")
+      .notNull()
+      .references(() => staff.id, { onDelete: "cascade" }),
+    serviceId: uuid("service_id")
+      .notNull()
+      .references(() => services.id, { onDelete: "cascade" }),
+  },
+  (t) => [uniqueIndex("staff_services_uq").on(t.staffId, t.serviceId)],
+);
+
+/** staff_id nulo = horario general del negocio. weekday: 0=domingo ... 6=sabado. */
+export const businessHours = pgTable("business_hours", {
+  id: pk(),
+  tenantId: tenantRef(),
+  staffId: uuid("staff_id").references(() => staff.id, { onDelete: "cascade" }),
+  weekday: smallint("weekday").notNull(),
+  opens: time("opens").notNull(),
+  closes: time("closes").notNull(),
+});
+
+export const businessHolidays = pgTable("business_holidays", {
+  id: pk(),
+  tenantId: tenantRef(),
+  staffId: uuid("staff_id").references(() => staff.id, { onDelete: "cascade" }),
+  date: date("date").notNull(),
+  reason: text("reason"),
+});
+
+/**
+ * El indice de exclusion que impide traslapes por empleado vive en la migracion
+ * SQL personalizada (Drizzle no puede expresarlo).
+ */
+export const appointments = pgTable(
+  "appointments",
+  {
+    id: pk(),
+    tenantId: tenantRef(),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    serviceId: uuid("service_id")
+      .notNull()
+      .references(() => services.id),
+    staffId: uuid("staff_id")
+      .notNull()
+      .references(() => staff.id),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    status: appointmentStatusEnum("status").notNull().default("pending"),
+    calendarEventId: text("calendar_event_id"),
+    reminder24hSentAt: timestamp("reminder_24h_sent_at", { withTimezone: true }),
+    reminder2hSentAt: timestamp("reminder_2h_sent_at", { withTimezone: true }),
+    confirmedByContact: boolean("confirmed_by_contact").notNull().default(false),
+    sourceConversationId: uuid("source_conversation_id").references(() => conversations.id, {
+      onDelete: "set null",
+    }),
+    ...timestamps,
+  },
+  (t) => [
+    index("appointments_tenant_starts_idx").on(t.tenantId, t.startsAt),
+    index("appointments_contact_idx").on(t.contactId),
+  ],
+);
