@@ -42,3 +42,9 @@ En la app de Meta agrega, en **Inicio de sesión con Facebook → URI de redirec
 - El cliente puede mandar imágenes, audios y archivos, pero el asistente **no los procesa** todavía (se guardan con su enlace); los adjuntos no soportados (historias, reels) llegan como aviso de texto.
 - No existe la etiqueta de agente humano (extender la ventana a 7 días): requiere permiso adicional de Meta.
 - No probado con Meta real: la conexión y el envío se verificaron con un Meta simulado en pruebas automáticas.
+
+## Dónde recibe los mensajes (webhook)
+
+El panel ya recibe los avisos de Meta en **`/api/webhooks/whatsapp`** (WhatsApp, Messenger e Instagram). Una sola dirección pública sirve para todo: en la app de Meta, para los productos **WhatsApp**, **Messenger** (*Page*) e **Instagram**, usa la URL `https://TU-DOMINIO/api/webhooks/whatsapp` y el mismo token de verificación (`WHATSAPP_VERIFY_TOKEN`).
+
+La ruta solo valida la firma, identifica al negocio y **encola**; la IA y el envío los hace el worker (`pnpm wa:worker`), que debe estar corriendo. El servidor de webhook propio del worker (`/webhooks/whatsapp`, puerto 3001) sigue existiendo para pruebas locales, pero ya no hace falta exponerlo.
