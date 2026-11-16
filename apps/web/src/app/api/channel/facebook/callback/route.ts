@@ -18,13 +18,22 @@ export async function GET(req: NextRequest) {
   if (!deps || valid.ctx.role !== "owner") return back("forbidden");
 
   const params = req.nextUrl.searchParams;
-  if (params.get("error")) return back("denied"); // el usuario cancelo
+  if (params.get("error")) {
+    console.error(`[facebook] Facebook devolvio error: ${params.get("error")} / ${params.get("error_description") ?? ""}`);
+    return back("denied"); // el usuario cancelo
+  }
   const code = params.get("code");
   // El state debe ser el que firmamos para ESTE usuario y negocio, reciente.
-  if (!code || !verifyState(params.get("state"), valid.session.uid, valid.session.tid)) return back("invalid");
+  if (!code || !verifyState(params.get("state"), valid.session.uid, valid.session.tid)) {
+    console.error("[facebook] callback invalido: falta el codigo o el state no coincide con tu sesion");
+    return back("invalid");
+  }
 
   const result = await fetchPagesForCode(deps, { code, redirectUri: `${base}/api/channel/facebook/callback` });
-  if (!result.ok) return back(result.error);
+  if (!result.ok) {
+    console.error(`[facebook] callback fallo: ${result.error}${result.detail ? ` (${result.detail})` : ""}`);
+    return back(result.error);
+  }
 
   const res = back("pick");
   res.cookies.set(PAGES_COOKIE, sealPages(valid.session.uid, valid.session.tid, result.pages), pagesCookieOptions);

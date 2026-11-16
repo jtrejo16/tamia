@@ -104,9 +104,10 @@ describe("Iniciar sesion con Facebook", () => {
   });
 
   it("sin paginas administradas, Meta rechaza o cae: errores claros", async () => {
-    expect(await fetchPagesForCode(fakeMeta({ accounts: [] }).deps, { code: "c", redirectUri: "r" })).toEqual({ ok: false, error: "no_pages" });
-    expect(await fetchPagesForCode(fakeMeta({ error: true, status: 400 }).deps, { code: "c", redirectUri: "r" })).toEqual({ ok: false, error: "meta_rejected" });
-    expect(await fetchPagesForCode(fakeMeta({ error: true, status: 503 }).deps, { code: "c", redirectUri: "r" })).toEqual({ ok: false, error: "meta_unavailable" });
+    expect(await fetchPagesForCode(fakeMeta({ accounts: [] }).deps, { code: "c", redirectUri: "r" })).toMatchObject({ ok: false, error: "no_pages" });
+    const rejected = await fetchPagesForCode(fakeMeta({ error: true, status: 400 }).deps, { code: "c", redirectUri: "r" });
+    expect(rejected).toMatchObject({ ok: false, error: "meta_rejected", detail: "rechazado" }); // el motivo de Meta queda para el registro
+    expect(await fetchPagesForCode(fakeMeta({ error: true, status: 503 }).deps, { code: "c", redirectUri: "r" })).toMatchObject({ ok: false, error: "meta_unavailable" });
   });
 });
 

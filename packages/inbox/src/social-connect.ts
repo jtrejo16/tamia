@@ -91,7 +91,7 @@ const metaFailure = (e: unknown): Failure<"meta_rejected" | "meta_unavailable"> 
 export async function fetchPagesForCode(
   d: SocialDeps,
   input: { code: string; redirectUri: string },
-): Promise<{ ok: true; pages: PageCandidate[] } | Failure<"meta_rejected" | "meta_unavailable" | "no_pages">> {
+): Promise<{ ok: true; pages: PageCandidate[] } | (Failure<"meta_rejected" | "meta_unavailable" | "no_pages"> & { detail?: string })> {
   try {
     const short = await call(d, "POST", "oauth/access_token", {
       form: { client_id: d.appId, client_secret: d.appSecret, redirect_uri: input.redirectUri, code: input.code },
@@ -110,10 +110,15 @@ export async function fetchPagesForCode(
         pageToken: p.access_token,
         instagram: p.instagram_business_account?.id ? { id: String(p.instagram_business_account.id), username: p.instagram_business_account.username ?? null } : null,
       }));
-    return pages.length > 0 ? { ok: true, pages } : fail("no_pages");
+    if (pages.length > 0) return { ok: true, pages };
+    // Sin paginas: lo mas util para diagnosticar es saber que permisos concedio realmente el usuario.
+    const perms = await call(d, "GET", "me/permissions", { token: String(long.access_token) }).catch(() => null);
+    const granted = Array.isArray(perms?.data) ? perms.data.filter((p: any) => p.status === "granted").map((p: any) => p.permission).join(",") : "desconocidos";
+    return { ...fail("no_pages"), detail: `permisos concedidos: ${granted}` };
   } catch (e) {
     const f = metaFailure(e);
-    if (f) return f;
+    // El mensaje de Meta no lleva datos sensibles; sirve para saber por que rechazo.
+    if (f) return { ...f, detail: e instanceof Error ? e.message : undefined };
     throw e;
   }
 }
