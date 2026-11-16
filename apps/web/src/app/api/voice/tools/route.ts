@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
   const raw = await req.text();
   if (raw.length > 1_000_000) return NextResponse.json({ error: "demasiado_grande" }, { status: 413 });
   if (!verifyRetellSignature({ body: raw, apiKey, signature: req.headers.get("x-retell-signature") })) {
+    console.warn("[voice] funcion con firma invalida; cabecera:", (req.headers.get("x-retell-signature") ?? "(ninguna)").replace(/[0-9a-f]{16,}/gi, "<hex>"));
     return NextResponse.json({ error: "firma_invalida" }, { status: 401 });
   }
 

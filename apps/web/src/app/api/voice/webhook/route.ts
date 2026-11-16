@@ -16,7 +16,8 @@ export async function POST(req: NextRequest) {
   const raw = await req.text();
   if (raw.length > 2_000_000) return NextResponse.json({ ok: false }, { status: 413 });
   if (!verifyRetellSignature({ body: raw, apiKey, signature: req.headers.get("x-retell-signature") })) {
-    console.warn("[voice] aviso con firma invalida");
+    // Se registra la FORMA de la cabecera (con los digitos ocultos) para diagnosticar sin exponer nada.
+    console.warn("[voice] aviso con firma invalida; cabecera:", (req.headers.get("x-retell-signature") ?? "(ninguna)").replace(/[0-9a-f]{16,}/gi, "<hex>"));
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 
