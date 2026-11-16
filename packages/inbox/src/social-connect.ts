@@ -56,6 +56,7 @@ class MetaCallError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: number,
   ) {
     super(message);
   }
@@ -77,7 +78,7 @@ async function call(d: SocialDeps, method: "GET" | "POST", path: string, opts: {
     throw new MetaCallError("sin conexion con Meta", 0);
   }
   const json = (await res.json().catch(() => ({}))) as Record<string, any>;
-  if (!res.ok || json.error) throw new MetaCallError(json.error?.message ?? `Meta respondio ${res.status}`, res.status);
+  if (!res.ok || json.error) throw new MetaCallError(json.error?.message ?? `Meta respondio ${res.status}`, res.status, json.error?.code);
   return json;
 }
 
@@ -258,31 +259,30 @@ export async function checkSocialChannels(db: Database, d: SocialDeps, ctx: Pane
       continue;
     }
     const pageId = c.type === "messenger" ? c.externalId : ((c.meta ?? {}) as { pageId?: string }).pageId;
+    // Misma consulta que hace la conexion (suscripciones de la pagina): si responde, la clave es valida.
     try {
-      await call(d, "GET", `${encodeURIComponent(c.externalId)}?fields=id`, { token });
-      check.tokenValid = true;
-    } catch (e) {
-      check.problems.push(
-        e instanceof MetaCallError && e.status > 0 && e.status < 500
-          ? "Meta rechazó la clave guardada (venció o se revocó). Desconecta y vuelve a conectar."
-          : "No se pudo consultar a Meta en este momento.",
-      );
-      checks.push(check);
-      continue;
-    }
-    if (!pageId) {
-      check.problems.push("No se conoce la página de esta cuenta: desconecta y vuelve a conectar para poder comprobarla.");
-    } else {
-      try {
+      if (pageId) {
         const subs = await call(d, "GET", `${encodeURIComponent(pageId)}/subscribed_apps`, { token });
+        check.tokenValid = true;
         const ours = (Array.isArray(subs.data) ? subs.data : []).find((a: any) => String(a.id) === d.appId);
         check.subscribed = Boolean(ours);
         check.fields = Array.isArray(ours?.subscribed_fields) ? ours.subscribed_fields.map(String) : [];
         if (!ours) check.problems.push("La página no está suscrita a tu aplicación: Meta no enviará sus mensajes. Desconecta y vuelve a conectar.");
         else if (!check.fields.includes("messages")) check.problems.push("La suscripción no incluye el campo «messages»: no llegarán mensajes. Vuelve a conectar la página.");
-      } catch {
-        check.problems.push("No se pudo comprobar la suscripción de la página.");
+      } else {
+        await call(d, "GET", `${encodeURIComponent(c.externalId)}?fields=id`, { token });
+        check.tokenValid = true;
+        check.problems.push("No se conoce la página de esta cuenta: desconecta y vuelve a conectar para poder comprobarla.");
       }
+    } catch (e) {
+      if (e instanceof MetaCallError && e.status > 0 && e.status < 500) {
+        // 190 = clave invalida de verdad; cualquier otro codigo es otra cosa (permisos, objeto...) y se muestra tal cual.
+        check.problems.push(
+          e.code === 190
+            ? `Meta rechazó la clave guardada (venció o se revocó). Desconecta y vuelve a conectar. Detalle de Meta: ${e.message}`
+            : `Meta respondió con un error (código ${e.code ?? e.status}): ${e.message}`,
+        );
+      } else check.problems.push("No se pudo consultar a Meta en este momento.");
     }
     checks.push(check);
   }
