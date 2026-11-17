@@ -281,3 +281,11 @@ export async function billingStatusOf(db: Database, preapprovalId: string): Prom
   const rows = await db.execute<{ s: string | null }>(sql`select billing_status_of(${preapprovalId}) as s`);
   return rows[0]?.s ?? null;
 }
+
+// ---------------------------------------------------------------- calendario externo (migraciones 0017-0018)
+
+/** Citas que toca reflejar en el calendario externo (de todos los negocios con calendario conectado; solo ids). */
+export async function calendarDueAppointments(db: Database, limit = 50): Promise<Array<{ tenantId: string; appointmentId: string }>> {
+  const rows = await db.execute<{ tenant_id: string; appointment_id: string }>(sql`select * from calendar_due_appointments(${limit})`);
+  return rows.map((r) => ({ tenantId: r.tenant_id, appointmentId: r.appointment_id }));
+}

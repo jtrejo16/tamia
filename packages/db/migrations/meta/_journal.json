@@ -120,6 +120,20 @@
       "when": 1794866568269,
       "tag": "0016_billing_reconciliation_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794877494375,
+      "tag": "0017_calendar_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794877506441,
+      "tag": "0018_calendar_rls_and_sync",
+      "breakpoints": true
     }
   ]
 }

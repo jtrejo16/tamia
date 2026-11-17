@@ -1,6 +1,6 @@
 import { SocialClient, WhatsAppClient } from "@empleado/channels";
 import { createDb, type DbHandle } from "@empleado/db";
-import { MercadoPagoClient, reconcileSubscriptions } from "@empleado/inbox";
+import { MercadoPagoClient, reconcileSubscriptions, syncAppointmentsToGoogle } from "@empleado/inbox";
 import { createLLMProvider, type LLMProvider } from "@empleado/llm";
 import type { Redis } from "ioredis";
 import { loadChannelAccess } from "./channel-access";
@@ -167,6 +167,26 @@ export function startSystem(config: WorkerConfig, system: WorkerSystem): () => v
   const reconcileStart = setTimeout(reconcile, 30_000);
   const reconcileTimer = setInterval(reconcile, 15 * 60_000);
 
+  // Google Calendar: refleja las citas confirmadas / movidas / canceladas en el calendario de cada negocio que lo
+  // conecto. Cada minuto; solo si el servidor tiene las credenciales de Google.
+  const gClientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const gClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  let calendarSyncing = false;
+  const calendarSync = () => {
+    if (!gClientId || !gClientSecret || calendarSyncing) return;
+    calendarSyncing = true;
+    syncAppointmentsToGoogle(db.db, { clientId: gClientId, clientSecret: gClientSecret, key: config.encryptionKey }, { log })
+      .then((r) => {
+        if (r.checked + r.errors > 0) log("calendar.sync", { ...r });
+        if (r.created + r.updated + r.deleted > 0) notify();
+      })
+      .catch((e) => log("calendar.sync_failed", { error: e instanceof Error ? e.message : String(e) }))
+      .finally(() => {
+        calendarSyncing = false;
+      });
+  };
+  const calendarTimer = setInterval(calendarSync, 60_000);
+
   // Latido: el panel avisa a las personas si el worker deja de dar senales de vida.
   const beat = () => workerBeat(redis, config.queuePrefix).catch(() => {});
   void beat();
@@ -179,5 +199,6 @@ export function startSystem(config: WorkerConfig, system: WorkerSystem): () => v
     clearInterval(templateSync);
     clearTimeout(reconcileStart);
     clearInterval(reconcileTimer);
+    clearInterval(calendarTimer);
   };
 }

@@ -105,6 +105,8 @@ export const appointments = pgTable(
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
     status: appointmentStatusEnum("status").notNull().default("pending"),
     calendarEventId: text("calendar_event_id"),
+    /** Ultima vez que esta cita se reflejo en el calendario externo (Google). Si es anterior a updated_at, hay que sincronizarla. */
+    calendarSyncedAt: timestamp("calendar_synced_at", { withTimezone: true }),
     reminder24hSentAt: timestamp("reminder_24h_sent_at", { withTimezone: true }),
     reminder2hSentAt: timestamp("reminder_2h_sent_at", { withTimezone: true }),
     confirmedByContact: boolean("confirmed_by_contact").notNull().default(false),
@@ -118,3 +120,22 @@ export const appointments = pgTable(
     index("appointments_contact_idx").on(t.contactId),
   ],
 );
+
+/**
+ * Calendario externo de un negocio (por ahora solo Google Calendar). Las citas confirmadas se reflejan como
+ * eventos en ese calendario. El token de renovacion va CIFRADO (AES-256-GCM, ligado al negocio).
+ */
+export const calendarConnections = pgTable("calendar_connections", {
+  id: pk(),
+  tenantId: tenantRef().unique(),
+  provider: text("provider").notNull().default("google"),
+  /** Cuenta de Google que autorizo (para mostrarla en Ajustes). */
+  accountEmail: text("account_email"),
+  calendarId: text("calendar_id").notNull().default("primary"),
+  refreshTokenEnc: bytea("refresh_token_enc").notNull(),
+  /** active | error (Google revoco el permiso o fallo la renovacion: hay que reconectar). */
+  status: text("status").notNull().default("active"),
+  lastError: text("last_error"),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  ...timestamps,
+});

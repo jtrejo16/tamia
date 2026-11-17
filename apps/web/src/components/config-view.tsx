@@ -9,10 +9,11 @@ import { Alert, Badge, Button, Spinner, cx } from "./ui";
 import { ChannelTab } from "./channel-view";
 import { SocialTab } from "./social-view";
 import { VoiceTab } from "./voice-view";
+import { CalendarTab } from "./calendar-view";
 import { UsersTab } from "./users-view";
 
 type Config = Serialized<ConfigSnapshot>;
-type Tab = "negocio" | "asistente" | "servicios" | "equipo" | "horarios" | "conocimiento" | "plantillas" | "whatsapp" | "redes" | "llamadas" | "usuarios";
+type Tab = "negocio" | "asistente" | "servicios" | "equipo" | "horarios" | "conocimiento" | "plantillas" | "whatsapp" | "redes" | "llamadas" | "calendario" | "usuarios";
 
 const TABS: Array<{ id: Tab; label: string; ownerOnly?: boolean }> = [
   { id: "negocio", label: "Negocio" },
@@ -24,6 +25,7 @@ const TABS: Array<{ id: Tab; label: string; ownerOnly?: boolean }> = [
   { id: "whatsapp", label: "WhatsApp" },
   { id: "redes", label: "Messenger e Instagram" },
   { id: "llamadas", label: "Llamadas" },
+  { id: "calendario", label: "Calendario" },
   { id: "plantillas", label: "Plantillas" },
   { id: "usuarios", label: "Usuarios", ownerOnly: true },
 ];
@@ -132,7 +134,8 @@ export function ConfigView() {
   const [tab, setTab] = useState<Tab>("negocio");
   // Al volver de Facebook se abre directo la pestaña de redes (?tab=redes); en efecto para no desajustar la hidratación.
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("tab") === "redes") setTab("redes");
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "redes" || t === "calendario") setTab(t);
   }, []);
 
   const editable = panel.role === "owner";
@@ -167,6 +170,8 @@ export function ConfigView() {
           <SocialTab editable={editable} />
         ) : tab === "llamadas" ? (
           <VoiceTab editable={editable} />
+        ) : tab === "calendario" ? (
+          <CalendarTab editable={editable} />
         ) : tab === "usuarios" && editable ? (
           <UsersTab />
         ) : error && !config ? (

@@ -22,19 +22,20 @@ export function socialDeps(): SocialDeps | null {
 }
 
 const b64 = (b: Buffer) => b.toString("base64url");
-const sign = (data: string) => b64(createHmac("sha256", env("AUTH_SECRET")).update(`fb-state:${data}`).digest());
+// `purpose` separa los state de cada flujo (Facebook, Google...): uno no sirve para completar el otro.
+const sign = (data: string, purpose: string) => b64(createHmac("sha256", env("AUTH_SECRET")).update(`${purpose}-state:${data}`).digest());
 
 /** El state va firmado y ligado al usuario y negocio que inicio el flujo: evita que otro "complete" tu conexion (CSRF). */
-export function makeState(uid: string, tid: string): string {
+export function makeState(uid: string, tid: string, purpose = "fb"): string {
   const data = b64(Buffer.from(JSON.stringify({ uid, tid, n: randomBytes(8).toString("hex"), exp: Date.now() + STATE_TTL_MS })));
-  return `${data}.${sign(data)}`;
+  return `${data}.${sign(data, purpose)}`;
 }
 
-export function verifyState(state: string | null, uid: string, tid: string): boolean {
+export function verifyState(state: string | null, uid: string, tid: string, purpose = "fb"): boolean {
   if (!state) return false;
   const [data, mac] = state.split(".");
   if (!data || !mac) return false;
-  const a = Buffer.from(sign(data));
+  const a = Buffer.from(sign(data, purpose));
   const b = Buffer.from(mac);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return false;
   try {
