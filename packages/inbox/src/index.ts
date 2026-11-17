@@ -15,5 +15,6 @@ export * from "./channel";
 export * from "./social-connect";
 export * from "./google-calendar";
 export * from "./retell";
+export * from "./stats";
 export * from "./voice";
 export * from "./voice-prompt";

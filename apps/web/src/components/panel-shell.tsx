@@ -18,6 +18,7 @@ const ICONS = {
   check: "M9 12l2 2 4-4M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z",
   calendar: "M8 2v4M16 2v4M3 9h18M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
   flask: "M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2.2h12.4a1.5 1.5 0 0 0 1.3-2.2L14 9V3",
+  chart: "M4 20V10M10 20V4M16 20v-7M22 20H2",
   out: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   phone: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z",
   cog: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z",
@@ -28,6 +29,7 @@ const ITEMS = [
   { href: "/aprobaciones", label: "Aprobaciones", icon: ICONS.check, badge: "approvals" as const },
   { href: "/citas", label: "Citas", icon: ICONS.calendar, badge: null },
   { href: "/llamadas", label: "Llamadas", icon: ICONS.phone, badge: null },
+  { href: "/estadisticas", label: "Estadísticas", icon: ICONS.chart, badge: null },
   { href: "/probador", label: "Probador", icon: ICONS.flask, badge: null },
   { href: "/configuracion", label: "Ajustes", icon: ICONS.cog, badge: null },
 ];
@@ -165,12 +167,12 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
         </div>
 
         {/* Barra inferior (celular) */}
-        <nav className="grid grid-cols-6 border-t border-slate-200 bg-white lg:hidden">
+        <nav className="flex overflow-x-auto border-t border-slate-200 bg-white lg:hidden">
           {ITEMS.map((item) => {
             const active = pathname.startsWith(item.href);
             const n = item.badge && counts ? counts[item.badge] : 0;
             return (
-              <Link key={item.href} href={item.href} className={cx("relative flex flex-col items-center gap-0.5 py-2 text-xs font-medium", active ? "text-teal-800" : "text-slate-500")}>
+              <Link key={item.href} href={item.href} className={cx("relative flex min-w-[76px] flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium", active ? "text-teal-800" : "text-slate-500")}>
                 <Icon d={item.icon} />
                 {item.label}
                 {n > 0 && <span className="absolute right-[22%] top-1 rounded-full bg-amber-500 px-1.5 text-[10px] font-semibold text-white">{n}</span>}
