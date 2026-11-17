@@ -49,6 +49,16 @@ export interface RetellAgentInput {
   webhook_url: string;
 }
 
+export interface RetellVoice {
+  id: string;
+  name: string;
+  provider?: string;
+  gender?: string;
+  accent?: string;
+  age?: string;
+  previewUrl?: string;
+}
+
 export class RetellClient {
   private readonly base: string;
   private readonly doFetch: typeof fetch;
@@ -74,6 +84,29 @@ export class RetellClient {
     const json = (await res.json().catch(() => ({}))) as T & { message?: string; error_message?: string };
     if (!res.ok) throw new RetellError(json.message ?? json.error_message ?? `Retell respondio ${res.status}`, res.status);
     return json;
+  }
+
+  /** Voces disponibles en la cuenta de Retell (para el desplegable del panel). */
+  async listVoices(): Promise<RetellVoice[]> {
+    const r = await this.call<unknown>("GET", "/list-voices");
+    if (!Array.isArray(r)) return [];
+    const s = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+    return r
+      .map((v): RetellVoice | null => {
+        const o = (v ?? {}) as Record<string, unknown>;
+        const id = s(o.voice_id);
+        if (!id) return null;
+        return {
+          id,
+          name: s(o.voice_name) ?? id,
+          provider: s(o.provider),
+          gender: s(o.gender),
+          accent: s(o.accent),
+          age: s(o.age),
+          previewUrl: s(o.preview_audio_url),
+        };
+      })
+      .filter((v): v is RetellVoice => v !== null);
   }
 
   async createLlm(input: RetellLlmInput): Promise<{ llmId: string }> {

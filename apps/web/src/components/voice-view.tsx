@@ -10,6 +10,7 @@ import { Alert, Badge, Button, EmptyState, Spinner, cx } from "./ui";
 
 type Call = Serialized<CallView>;
 type Settings = Serialized<VoiceSettingsView>;
+type VoiceOption = { id: string; name: string; provider?: string; gender?: string; accent?: string; previewUrl?: string };
 
 const field =
   "w-full rounded-lg bg-white px-3 py-2 text-sm text-slate-900 ring-1 ring-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-600";
@@ -69,6 +70,8 @@ export function VoiceTab({ editable }: { editable: boolean }) {
   const [form, setForm] = useState({ enabled: false, allowBooking: false, greeting: "", voiceId: "", phoneNumber: "", transferNumber: "" });
   const [notice, setNotice] = useState<{ tone: "green" | "rose" | "amber"; text: string; details?: string[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [voices, setVoices] = useState<VoiceOption[]>([]);
+  const [voicesError, setVoicesError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await api<{ ok: true; settings: Settings }>("/api/voice/settings");
@@ -80,6 +83,20 @@ export function VoiceTab({ editable }: { editable: boolean }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Voces disponibles en Retell (desplegable). Las que suenan en espanol/mexicano van primero.
+  useEffect(() => {
+    void (async () => {
+      const res = await api<{ ok: true; voices: VoiceOption[] }>("/api/voice/voices");
+      if (!res.ok) {
+        setVoicesError(res.message);
+        return;
+      }
+      const rank = (v: VoiceOption) => (/mex|latin|spanish|espa/i.test(`${v.accent ?? ""} ${v.name}`) ? 0 : 1);
+      setVoices([...res.voices].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name)));
+    })();
+  }, []);
+  const selectedVoice = voices.find((v) => v.id === form.voiceId);
 
   async function save(then?: "sync") {
     setBusy("save");
@@ -131,9 +148,23 @@ export function VoiceTab({ editable }: { editable: boolean }) {
           <label className="block text-sm font-medium text-slate-700 sm:col-span-2">Saludo (opcional)
             <input className={cx(field, "mt-1")} disabled={disabled} maxLength={300} value={form.greeting} onChange={(e) => setForm((p) => ({ ...p, greeting: e.target.value }))} placeholder="Hola, gracias por llamar a… ¿en qué te puedo ayudar?" />
           </label>
-          <label className="block text-sm font-medium text-slate-700">Voz (identificador de Retell)
-            <input className={cx(field, "mt-1 font-mono")} disabled={disabled} value={form.voiceId} onChange={(e) => setForm((p) => ({ ...p, voiceId: e.target.value }))} placeholder="Voice ID" />
-          </label>
+          <div className="block text-sm font-medium text-slate-700">
+            <label>Voz
+              {voices.length > 0 ? (
+                <select className={cx(field, "mt-1")} disabled={disabled} value={form.voiceId} onChange={(e) => setForm((p) => ({ ...p, voiceId: e.target.value }))}>
+                  <option value="">— Elige una voz —</option>
+                  {form.voiceId && !voices.some((v) => v.id === form.voiceId) && <option value={form.voiceId}>{form.voiceId} (actual)</option>}
+                  {voices.map((v) => (
+                    <option key={v.id} value={v.id}>{[v.name, v.provider, v.gender, v.accent].filter(Boolean).join(" · ")}</option>
+                  ))}
+                </select>
+              ) : (
+                <input className={cx(field, "mt-1 font-mono")} disabled={disabled} value={form.voiceId} onChange={(e) => setForm((p) => ({ ...p, voiceId: e.target.value }))} placeholder="Voice ID" />
+              )}
+            </label>
+            {voicesError && <span className="mt-1 block text-xs font-normal text-amber-700">{voicesError} Puedes escribir el identificador a mano.</span>}
+            {selectedVoice?.previewUrl && <audio className="mt-2 h-8 w-full" controls preload="none" src={selectedVoice.previewUrl} />}
+          </div>
           <label className="block text-sm font-medium text-slate-700">Número de teléfono (para mostrar)
             <input className={cx(field, "mt-1")} disabled={disabled} value={form.phoneNumber} onChange={(e) => setForm((p) => ({ ...p, phoneNumber: e.target.value }))} placeholder="+529981234567" />
           </label>
@@ -156,7 +187,7 @@ export function VoiceTab({ editable }: { editable: boolean }) {
       <section className="rounded-2xl bg-white p-5 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200">
         <h2 className="mb-2 font-semibold text-slate-900">Cómo recibir llamadas</h2>
         <ol className="list-decimal space-y-1 pl-5">
-          <li>Elige una voz en Retell y pega su identificador arriba.</li>
+          <li>Elige una voz del desplegable de arriba (puedes escucharla antes de guardar).</li>
           <li>Pulsa <strong>Guardar y sincronizar</strong>: se crea tu agente en Retell.</li>
           <li>Para <strong>probar sin número</strong>, abre ese agente en Retell y usa la llamada web de prueba.</li>
           <li>Para recibir llamadas reales, enlaza un número telefónico a ese agente en Retell (con Twilio u otro proveedor).</li>
