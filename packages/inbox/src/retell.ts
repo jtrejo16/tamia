@@ -64,7 +64,7 @@ export interface RetellAgentInput {
 
 /**
  * Ajustes para que las llamadas cuesten menos (la voz es lo mas caro del sistema; ver docs/COSTOS-PRODUCTO.md):
- *  - RETELL_LLM_MODEL: modelo de lenguaje del agente. Por defecto "gpt-5.4-mini" (chico y con herramientas). Puedes poner
+ *  - RETELL_LLM_MODEL: modelo de lenguaje del agente. Por defecto "gpt-5.6-luna" (rapido, con herramientas confiables y de costo bajo). Puedes poner
  *    "gpt-5-nano" o "gemini-3.5-flash-lite" (mas baratos) o "claude-5.5-haiku". Vacio o "default" = el de Retell.
  *  - VOICE_MAX_CALL_MINUTES: tope por llamada (1 a 120; por defecto 10).
  *  - VOICE_SILENCE_SECONDS: cuelga tras tanto silencio (10 a 600; por defecto 20).
@@ -77,7 +77,7 @@ export function voiceCostSettings(env: Record<string, string | undefined>): { mo
   };
   // Sin variable: modelo economico recomendado. Vacia o "default": el de Retell. Con un nombre mal escrito: el recomendado.
   const raw = env.RETELL_LLM_MODEL?.trim();
-  let model: string | undefined = "gpt-5.4-mini";
+  let model: string | undefined = "gpt-5.6-luna";
   if (raw !== undefined) {
     if (raw === "" || raw.toLowerCase() === "default") model = undefined;
     else if (/^[a-z0-9.-]{2,40}$/i.test(raw)) model = raw;

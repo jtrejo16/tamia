@@ -127,7 +127,7 @@ Estos **los cobra Meta directamente al cliente**, porque cada negocio conecta su
 ### Llamadas más baratas (aplicado)
 
 Al **sincronizar** el agente (Ajustes → Llamadas → Sincronizar, o desde el Operador), el sistema ahora le manda a Retell:
-- **Modelo de lenguaje económico** (`RETELL_LLM_MODEL`, por defecto `gpt-5.4-mini`). Antes se usaba el modelo por defecto de Retell, de los más caros (≈ US$0.06 por minuto solo el modelo). Opciones más baratas: `gpt-5-nano`, `gemini-3.5-flash-lite`; `claude-5.5-haiku`; `default` para volver al de Retell.
+- **Modelo de lenguaje económico** (`RETELL_LLM_MODEL`, por defecto **`gpt-5.6-luna`**). Antes se usaba el modelo por defecto de Retell, de los más caros (≈ US$0.06 por minuto solo el modelo). Elegido con la tabla de comparación de Retell (capacidad 86.9 %, herramientas 88 %, 329 ms, **US$0.0064 por minuto**). Alternativas: `claude-5.5-haiku` (herramientas 90 %, aterrizado 92 %, US$0.0032, pero 742 ms), `gpt-6-luna` (80.7 %, US$0.0032), `gemini-3.1-flash-lite` (82.6 %, US$0.008); `default` para volver al de Retell. No usar `gpt-5-nano` (herramientas 60 %, capacidad 56 %): es muy barato pero falla al agendar.
 - **Tope de duración** por llamada (`VOICE_MAX_CALL_MINUTES`, por defecto 10 min; Retell usa 60 por defecto).
 - **Colgar tras silencio** (`VOICE_SILENCE_SECONDS`, por defecto 20 s; Retell usa 10 minutos por defecto).
 
