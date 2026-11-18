@@ -161,10 +161,12 @@ describe("ajustes y sincronizacion con Retell", () => {
     const { client, calls: rc } = fakeRetell();
     const economy = voiceCostSettings({});
     await syncVoiceAgent(dbs.app.db, client, w.owner, { baseUrl: "https://panel.test", economy });
-    expect(rc.find((c) => c.path === "/create-retell-llm")!.body.model).toBe("gpt-5.4-mini");
+    // Retell ignora el campo antiguo `model` si el modelo ya trae `model_config`: se manda el actual.
+    expect(rc.find((c) => c.path === "/create-retell-llm")!.body.model_config).toEqual({ type: "cascading", primary: { model: "gpt-5.4-mini", tier: "standard" } });
+    expect(rc.find((c) => c.path === "/create-retell-llm")!.body).not.toHaveProperty("model");
     expect(rc.find((c) => c.path === "/create-agent")!.body).toMatchObject({ max_call_duration_ms: 600_000, end_call_after_silence_ms: 20_000 });
     await syncVoiceAgent(dbs.app.db, client, w.owner, { baseUrl: "https://panel.test", economy });
-    expect(rc.find((c) => c.path.startsWith("/update-retell-llm/"))!.body.model).toBe("gpt-5.4-mini");
+    expect(rc.find((c) => c.path.startsWith("/update-retell-llm/"))!.body.model_config).toEqual({ type: "cascading", primary: { model: "gpt-5.4-mini", tier: "standard" } });
     expect(rc.find((c) => c.path.startsWith("/update-agent/"))!.body).toMatchObject({ max_call_duration_ms: 600_000, end_call_after_silence_ms: 20_000 });
 
     // Sin ajustes (llamadas anteriores del codigo): no se manda modelo ni topes y Retell usa los suyos.
@@ -172,7 +174,7 @@ describe("ajustes y sincronizacion con Retell", () => {
     await saveVoiceSettings(dbs.app.db, w2.owner, { enabled: true, allowBooking: false, voiceId: "v2" });
     const fake2 = fakeRetell();
     await syncVoiceAgent(dbs.app.db, fake2.client, w2.owner, { baseUrl: "https://panel.test" });
-    expect(fake2.calls.find((c) => c.path === "/create-retell-llm")!.body).not.toHaveProperty("model");
+    expect(fake2.calls.find((c) => c.path === "/create-retell-llm")!.body).not.toHaveProperty("model_config");
     expect(fake2.calls.find((c) => c.path === "/create-agent")!.body).not.toHaveProperty("max_call_duration_ms");
   });
 

@@ -39,9 +39,16 @@ export interface RetellLlmInput {
   general_prompt: string;
   begin_message: string;
   general_tools: RetellTool[];
-  /** Modelo de lenguaje del agente. Sin valor, Retell usa el suyo por defecto (de los mas caros). */
-  model?: string;
+  /**
+   * Modelo de lenguaje del agente (campo actual de Retell). Sin valor, Retell usa el suyo por defecto (de los mas caros).
+   * OJO: el campo antiguo `model` se IGNORA cuando el modelo ya tiene `model_config`, por eso se usa este.
+   */
+  model_config?: { type: "cascading"; primary: { model: string; tier: "standard" } };
 }
+
+/** Arma el `model_config` de Retell para un modelo (o nada, para dejar el de Retell). */
+export const retellModelConfig = (model: string | undefined): Pick<RetellLlmInput, "model_config"> =>
+  model ? { model_config: { type: "cascading", primary: { model, tier: "standard" } } } : {};
 
 export interface RetellAgentInput {
   agent_name: string;

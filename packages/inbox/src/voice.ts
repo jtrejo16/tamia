@@ -16,7 +16,7 @@ import {
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { tenantAccess } from "./billing";
-import { RetellError, type RetellClient, type RetellTool } from "./retell";
+import { RetellError, retellModelConfig, type RetellClient, type RetellTool } from "./retell";
 import { DEFAULT_GREETING, VOICE_TRANSFER_CHECK, VOICE_TRANSFER_TOOL, buildVoicePrompt, voiceToolNames } from "./voice-prompt";
 import { can, fail, type Failure, type PanelContext, type Success } from "./types";
 
@@ -177,7 +177,7 @@ export async function syncVoiceAgent(
     begin_message: settings.greeting || DEFAULT_GREETING(tenant.name, config.assistantName),
     general_tools: tools,
     // Modelo economico (la voz es lo mas caro): ver voiceCostSettings en retell.ts.
-    ...(input.economy?.model ? { model: input.economy.model } : {}),
+    ...retellModelConfig(input.economy?.model),
   };
   const agent = {
     agent_name: `${tenant.name} (${tenant.slug})`.slice(0, 120),
