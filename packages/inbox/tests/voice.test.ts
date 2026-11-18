@@ -169,6 +169,13 @@ describe("ajustes y sincronizacion con Retell", () => {
     expect(rc.find((c) => c.path.startsWith("/update-retell-llm/"))!.body.model_config).toEqual({ type: "cascading", primary: { model: "gpt-5.6-luna", tier: "standard" } });
     expect(rc.find((c) => c.path.startsWith("/update-agent/"))!.body).toMatchObject({ max_call_duration_ms: 600_000, end_call_after_silence_ms: 20_000, post_call_analysis_model: "claude-5.5-haiku" });
 
+    // El resumen de la llamada se pide en español (Retell lo hace en ingles si no se le indica).
+    const analysis = rc.find((c) => c.path === "/create-agent")!.body.post_call_analysis_data;
+    expect(analysis).toHaveLength(1);
+    expect(analysis[0]).toMatchObject({ type: "system-presets", name: "call_summary" });
+    expect(analysis[0].description).toMatch(/ESPAÑOL/);
+    expect(rc.find((c) => c.path.startsWith("/update-agent/"))!.body.post_call_analysis_data).toEqual(analysis);
+
     // Sin ajustes (llamadas anteriores del codigo): no se manda modelo ni topes y Retell usa los suyos.
     const w2 = await world();
     await saveVoiceSettings(dbs.app.db, w2.owner, { enabled: true, allowBooking: false, voiceId: "v2" });

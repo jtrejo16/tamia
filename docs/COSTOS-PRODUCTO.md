@@ -144,6 +144,8 @@ Al **sincronizar** el agente (Ajustes → Llamadas → Sincronizar, o desde el O
 
 Hallazgo: el **análisis posterior a la llamada** (resumen, sentimiento y «exitosa») cuesta **≈ US$0.021 FIJOS por llamada** con el modelo por defecto de Retell (`gpt-5.6-terra`), más que el propio modelo de la llamada. En llamadas cortas es el 25 % del costo. Por eso el sistema ahora también manda `RETELL_ANALYSIS_MODEL` (por defecto **`claude-5.5-haiku`**: en el panel de Retell, en «Post call extraction», aparece como **gratis**; verifícalo con el desglose de la próxima llamada). Si al medir cobra algo, alternativas: `gpt-5.6-luna` o `gpt-5-nano`.
 
+**Llamada completa con la configuración final (18-nov, 1 min 48 s, cita reprogramada con éxito):** voz 9.9¢ + voz sintetizada 2.7¢ + modelo 1.15¢ = **US$0.1375** (7.6¢ por minuto) y **sin cargo de análisis** (con `claude-5.5-haiku` no aparece la línea). Más la telefonía de DIDWW (2 minutos iniciados = US$0.02): **≈ US$0.158 en total, ≈ US$0.088 por minuto**, frente a ≈ US$0.18 antes: **ahorro ≈ 50 %**. Latencia total ≈ 760 ms. El agente quedó con `gpt-5.6-luna`, tope de 10 min y 20 s de silencio (verificado en Retell).
+
 Después de desplegar hay que **volver a sincronizar** cada agente y hacer una **llamada de prueba** (agendar una cita completa) para confirmar que el modelo chico sigue usando bien las herramientas. El efecto en el costo se ve en Retell por llamada (ya se guarda) y en Operador → Costos y rentabilidad.
 
 ## 7. Qué falta confirmar (no inventé)

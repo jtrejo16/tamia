@@ -62,6 +62,8 @@ export interface RetellAgentInput {
   end_call_after_silence_ms?: number;
   /** Modelo del analisis posterior a la llamada (resumen y sentimiento). Retell usa gpt-5.6-terra por defecto: ~US$0.02 FIJOS por llamada. */
   post_call_analysis_model?: string;
+  /** Instrucciones del analisis posterior (resumen, sentimiento, exito): sin esto Retell resume en ingles. */
+  post_call_analysis_data?: Array<{ type: "system-presets"; name: "call_summary" | "call_successful" | "user_sentiment"; description: string }>;
 }
 
 /**
@@ -93,6 +95,16 @@ export function voiceCostSettings(env: Record<string, string | undefined>): { mo
     silenceMs: int(env.VOICE_SILENCE_SECONDS, 10, 600, 20) * 1000,
   };
 }
+
+/** Resumen en ESPAÑOL para el equipo (Retell resume en ingles si no se le indica). Usado en Llamadas y en la bandeja. */
+export const CALL_ANALYSIS_ES: NonNullable<RetellAgentInput["post_call_analysis_data"]> = [
+  {
+    type: "system-presets",
+    name: "call_summary",
+    description:
+      "Resume la llamada EN ESPAÑOL, en 1 a 3 frases claras para el personal de la clínica: qué quería la persona, qué se hizo (cita agendada, cambiada, cancelada, información) y si quedó algo pendiente. No inventes datos y no incluyas nada que no se haya dicho.",
+  },
+];
 
 export interface RetellVoice {
   id: string;
@@ -174,6 +186,7 @@ export class RetellClient {
       ...(input.max_call_duration_ms ? { max_call_duration_ms: input.max_call_duration_ms } : {}),
       ...(input.end_call_after_silence_ms ? { end_call_after_silence_ms: input.end_call_after_silence_ms } : {}),
       ...(input.post_call_analysis_model ? { post_call_analysis_model: input.post_call_analysis_model } : {}),
+      ...(input.post_call_analysis_data ? { post_call_analysis_data: input.post_call_analysis_data } : {}),
     });
     if (!r.agent_id) throw new RetellError("Retell no devolvio el id del agente", 502);
     return { agentId: r.agent_id };
@@ -189,6 +202,7 @@ export class RetellClient {
       ...(input.max_call_duration_ms ? { max_call_duration_ms: input.max_call_duration_ms } : {}),
       ...(input.end_call_after_silence_ms ? { end_call_after_silence_ms: input.end_call_after_silence_ms } : {}),
       ...(input.post_call_analysis_model ? { post_call_analysis_model: input.post_call_analysis_model } : {}),
+      ...(input.post_call_analysis_data ? { post_call_analysis_data: input.post_call_analysis_data } : {}),
     });
   }
 }

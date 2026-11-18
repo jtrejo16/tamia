@@ -16,7 +16,7 @@ import {
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { tenantAccess } from "./billing";
-import { RetellError, retellModelConfig, type RetellClient, type RetellTool } from "./retell";
+import { CALL_ANALYSIS_ES, RetellError, retellModelConfig, type RetellClient, type RetellTool } from "./retell";
 import { DEFAULT_GREETING, VOICE_TRANSFER_CHECK, VOICE_TRANSFER_TOOL, buildVoicePrompt, voiceToolNames } from "./voice-prompt";
 import { can, fail, type Failure, type PanelContext, type Success } from "./types";
 
@@ -189,6 +189,8 @@ export async function syncVoiceAgent(
     ...(input.economy?.silenceMs ? { end_call_after_silence_ms: input.economy.silenceMs } : {}),
     // El analisis posterior (resumen y sentimiento) cuesta ≈ US$0.02 fijos por llamada con el modelo por defecto de Retell.
     ...(input.economy?.analysisModel ? { post_call_analysis_model: input.economy.analysisModel } : {}),
+    // El resumen sale en español (con el valor por defecto de Retell sale en ingles).
+    post_call_analysis_data: CALL_ANALYSIS_ES,
   };
 
   try {
