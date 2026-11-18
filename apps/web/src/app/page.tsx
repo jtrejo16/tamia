@@ -15,16 +15,19 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   robots: { index: true, follow: true },
   openGraph: { title: TITLE, description: DESCRIPTION, type: "website", locale: "es_MX", siteName: "Tamia" },
-  alternates: { canonical: "https://www.tamia.com.mx" },
+  metadataBase: new URL(process.env.PUBLIC_BASE_URL?.trim() || "https://app.tamia.com.mx"),
+  alternates: { canonical: "/" },
 };
 
-/** Inicio publico (www.tamia.com.mx). Con sesion va directo al panel; el panel (app.…) sin sesion va al login. */
+/**
+ * Inicio publico. Con sesion va directo al panel. Sin sesion se ve la portada (con www.tamia.com.mx redirigiendo aqui,
+ * o en su propio dominio si algun dia se agrega): el login y el registro estan a un clic.
+ */
 export default async function Landing() {
   const host = ((await headers()).get("x-forwarded-host") ?? (await headers()).get("host") ?? "").toLowerCase();
   if (await getValidSession()) redirect("/bandeja");
-  if (host.startsWith("app.")) redirect("/login");
 
-  // En www.tamia.com.mx la cuenta y el panel viven en app.tamia.com.mx; en otro host (local) se usan rutas relativas.
+  // Si la portada se sirve desde www.<dominio>, la cuenta y el panel viven en app.<dominio>; en cualquier otro host se usan rutas relativas.
   const app = host.startsWith("www.") ? `https://app.${host.slice(4)}` : "";
   const signup = `${app}/registro`;
   const login = `${app}/login`;
