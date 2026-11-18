@@ -24,6 +24,7 @@ import {
 } from "@empleado/llm";
 import { and, count, desc, eq, gt, gte } from "drizzle-orm";
 import { formatLocal, toPlainText, toWhatsAppText } from "./format";
+import { claimsHandoff } from "./handoff-claim";
 import { MAX_RAW_HISTORY, maybeSummarize, messageText } from "./memory";
 import { GENERIC_PACK, loadPack, type Pack } from "./pack";
 import { decideOutput, modeFor, type Autonomy } from "./policy";
@@ -358,6 +359,9 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
     } else if (!finalText && !ctx.escalated) {
       failure = "respuesta_vacia";
       await forceEscalation(ctx, "Falla del asistente (no fue su decisión): el modelo de IA no generó ninguna respuesta.");
+    } else if (!ctx.escalated && claimsHandoff(finalText)) {
+      // Le dijo al cliente que una persona lo atendera, pero nunca llamo a escalar_a_humano: se escala de verdad.
+      await forceEscalation(ctx, "Escalación automática: el asistente le dijo al cliente que una persona lo atendería, pero no había escalado la conversación. Revisa qué necesita el cliente.");
     }
   } catch (error) {
     failure = error instanceof LLMError ? `llm_${error.status ?? "red"}` : "error_inesperado";

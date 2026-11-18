@@ -335,6 +335,18 @@ describe("escalamiento y robustez", () => {
     expect(fresh).toMatchObject({ action: "none", reason: "duplicate" });
   });
 
+  it("si el modelo le dice al cliente que lo pasa con una persona pero no escala, el codigo escala de verdad", async () => {
+    const w = await world();
+    const r = await turn(w, new FakeLLM([{ text: "Le paso tu mensaje a la recepción y te contestan en breve." }]), "quiero una cita");
+    expect(r.escalated).toBe(true);
+    const [conv] = await dbs.owner.db.select().from(conversations).where(eq(conversations.id, w.conversationId));
+    expect(conv?.state).toBe("human");
+    const [h] = await dbs.owner.db.select().from(handoffs).where(eq(handoffs.conversationId, w.conversationId));
+    expect(h).toMatchObject({ source: "system" });
+    expect(h!.reason).toMatch(/Escalación automática/);
+    expect(h!.summary).toContain("quiero una cita");
+  });
+
   it("si el modelo cicla con herramientas, corta a las 5 vueltas y escala", async () => {
     const w = await world();
     const llm = new FakeLLM([{ tools: [{ name: "consultar_servicios", args: {} }] }]);

@@ -318,7 +318,7 @@ function ConversationPane({ id, onBack }: { id: string; onBack: () => void }) {
                 </p>
               )}
               {c.handoff.source === "system" && (
-                <p className="text-xs font-medium text-rose-800">Esto fue una falla del asistente, no una decisión suya: el cliente no recibió una respuesta real.</p>
+                <p className="text-xs font-medium text-rose-800">Escalación automática por una falla del asistente, no una decisión suya: revisa la conversación y contesta al cliente.</p>
               )}
             </div>
           )}
