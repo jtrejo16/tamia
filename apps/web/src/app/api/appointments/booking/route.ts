@@ -1,4 +1,4 @@
-import { bookingCatalog, freeSlots, searchBookingContacts } from "@empleado/inbox";
+import { bookingCatalog, freeSlots, getContactRelations, searchBookingContacts } from "@empleado/inbox";
 import { NextResponse } from "next/server";
 import { authed, failure, respond } from "@/lib/api";
 import { getDb } from "@/lib/server";
@@ -21,6 +21,11 @@ export const GET = authed(async (req, ctx) => {
       return NextResponse.json({ ok: true, ...(await bookingCatalog(getDb(), ctx)) });
     case "contacts":
       return NextResponse.json({ ok: true, items: await searchBookingContacts(getDb(), ctx, p.get("q") ?? "") });
+    case "relations": {
+      const contactId = p.get("contactId") ?? "";
+      if (!UUID.test(contactId)) return failure("bad_request");
+      return NextResponse.json({ ok: true, relations: await getContactRelations(getDb(), ctx, contactId) });
+    }
     case "slots": {
       const serviceId = p.get("serviceId") ?? "";
       const staffId = p.get("staffId") ?? "";

@@ -22,6 +22,7 @@ import {
   type PanelContext,
   type Result,
 } from "./types";
+import { contactRelations, type ContactRelations } from "./contact-link";
 
 export type ConversationFilter = "all" | "attention" | "bot" | "human" | "closed";
 
@@ -208,6 +209,8 @@ export async function listConversations(
 }
 
 export interface ConversationDetail extends ConversationSummary {
+  /** Citas activas y futuras de este cliente, y posibles duplicados suyos en otras redes (con sus citas). */
+  relations: ContactRelations;
   messages: MessageView[];
   assignedUserName: string | null;
   approvals: Array<{ id: string; draft: string; createdAt: Date; actionSummaries: string[] }>;
@@ -254,6 +257,7 @@ export async function getConversation(
 
     return {
       ...summary!,
+      relations: await contactRelations(tx, row.contact.id, now),
       assignedUserName,
       messages: recent.reverse().map(
         (m): MessageView => ({

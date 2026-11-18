@@ -1,6 +1,6 @@
 "use client";
 
-import type { BookingCatalog, BookingContact } from "@empleado/inbox";
+import type { BookingCatalog, BookingContact, ContactRelations } from "@empleado/inbox";
 import { useEffect, useMemo, useState } from "react";
 import { api, makeFormatters } from "@/lib/client";
 import type { Serialized } from "@/lib/types";
@@ -50,7 +50,21 @@ export function NewAppointmentDialog({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ summary: string; notified: boolean | string } | null>(null);
 
+  const [relations, setRelations] = useState<Serialized<ContactRelations> | null>(null);
   const service = catalog?.services.find((s) => s.id === serviceId) ?? null;
+
+  // Avisa si el cliente ya tiene cita (o parece tenerla por otro medio) para no duplicarla.
+  useEffect(() => {
+    setRelations(null);
+    if (!picked) return;
+    let live = true;
+    void api<{ ok: true; relations: Serialized<ContactRelations> }>(`/api/appointments/booking?what=relations&contactId=${picked.id}`).then((r) => {
+      if (live && r.ok) setRelations(r.relations);
+    });
+    return () => {
+      live = false;
+    };
+  }, [picked]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -187,6 +201,23 @@ export function NewAppointmentDialog({
                   </div>
                 )}
               </div>
+
+              {relations && (relations.appointments.length > 0 || relations.possibleSame.some((p) => p.appointments.length > 0)) && (
+                <Alert tone="amber">
+                  {relations.appointments.length > 0 && (
+                    <p>
+                      <strong>Este cliente ya tiene cita:</strong> {relations.appointments.map((a) => `${fmt.dayLabel(a.startsAt)} ${fmt.time(a.startsAt)} (${a.service})`).join(" · ")}. Agenda otra solo si es una distinta.
+                    </p>
+                  )}
+                  {relations.possibleSame
+                    .filter((p) => p.appointments.length > 0)
+                    .map((p) => (
+                      <p key={p.contactId}>
+                        <strong>Puede ser {p.name}</strong> (otro medio), que tiene cita: {p.appointments.map((a) => `${fmt.dayLabel(a.startsAt)} ${fmt.time(a.startsAt)} (${a.service})`).join(" · ")}. Si es la misma persona, únelos desde la conversación.
+                      </p>
+                    ))}
+                </Alert>
+              )}
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>

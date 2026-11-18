@@ -3,6 +3,7 @@ import {
   approvals,
   auditLog,
   conversationMemory,
+  contacts,
   conversations,
   handoffs,
   messages,
@@ -640,5 +641,66 @@ describe("memoria", () => {
       dataCollection: "allow",
     });
     expect(done).toBe(false);
+  });
+});
+
+describe("citas duplicadas entre medios", () => {
+  const mkAppt = (w: World, contactId: string, startsAt: Date) =>
+    dbs.owner.db.insert(appointments).values({
+      tenantId: w.tenantId,
+      contactId,
+      serviceId: w.serviceId,
+      staffId: w.staffId,
+      startsAt,
+      endsAt: new Date(startsAt.getTime() + 45 * 60_000),
+      status: "confirmed",
+    });
+  const firstResult = (r: Awaited<ReturnType<typeof turn>>) => r.toolTrace[0]?.result as Record<string, unknown>;
+
+  it("si el cliente YA tiene cita de ese servicio, el asistente no crea otra y le dice cuando es", async () => {
+    const w = await world();
+    await mkAppt(w, w.contactId, new Date("2027-03-03T16:00:00Z"));
+    const r = await turn(w, new FakeLLM([{ tools: [book(w)] }, { text: "Ya tienes una cita; ¿la cambiamos?" }]), "quiero una limpieza");
+    expect(firstResult(r)).toMatchObject({ error: "ya_tiene_cita" });
+    expect(String(firstResult(r).cuando)).toMatch(/miércoles|3 de marzo|mar/i);
+    expect((await allAppointments(w)).filter((a) => a.status === "confirmed")).toHaveLength(1);
+  });
+
+  it("con adicional=true (el cliente pide OTRA) si deja continuar", async () => {
+    const w = await world();
+    await mkAppt(w, w.contactId, new Date("2027-03-03T16:00:00Z"));
+    const r = await turn(w, new FakeLLM([{ tools: [{ ...book(w), args: { ...book(w).args, adicional: true } }] }, { text: "ok" }]), "quiero otra cita");
+    expect(firstResult(r)).toMatchObject({ requiere_confirmacion: true });
+  });
+
+  it("si parece la misma persona en otro medio (mismo nombre), NO revela esa cita y pide verificar con el equipo", async () => {
+    const w = await world();
+    // Otro contacto (p. ej. de Facebook) con el mismo nombre completo y una cita de ese servicio.
+    const [fb] = await dbs.owner.db.insert(contacts).values({ tenantId: w.tenantId, displayName: "carlos perez" }).returning();
+    await mkAppt(w, fb!.id, new Date("2027-03-03T16:00:00Z"));
+    const r = await turn(w, new FakeLLM([{ tools: [book(w)] }, { text: "Lo verifico con el equipo." }]), "quiero una limpieza");
+    const res = firstResult(r);
+    expect(res).toMatchObject({ error: "posible_cita_en_otro_canal" });
+    expect(JSON.stringify(res)).not.toMatch(/miércoles|16:00|10:00|cita_id/i);
+  });
+
+  it("un nombre de una sola palabra no se toma como pista (demasiada gente se llama igual)", async () => {
+    const w = await world({ contactName: "Carlos" });
+    const [other] = await dbs.owner.db.insert(contacts).values({ tenantId: w.tenantId, displayName: "Carlos" }).returning();
+    await mkAppt(w, other!.id, new Date("2027-03-03T16:00:00Z"));
+    const r = await turn(w, new FakeLLM([{ tools: [book(w)] }, { text: "ok" }]), "quiero una limpieza");
+    expect(firstResult(r)).toMatchObject({ requiere_confirmacion: true });
+  });
+
+  it("si dice un telefono que ya es de otro contacto, se anota para que el equipo lo una (sin revelar nada)", async () => {
+    const w = await world({ contactName: "Sofía Lara" });
+    const [wa] = await dbs.owner.db.select().from(contacts).where(eq(contacts.id, w.otherContactId));
+    // Este cliente (sin telefono) dice el numero de OTRO contacto.
+    await dbs.owner.db.update(contacts).set({ phoneE164: null }).where(eq(contacts.id, w.contactId));
+    const r = await turn(w, new FakeLLM([{ tools: [{ name: "guardar_datos_contacto", args: { telefono: wa!.phoneE164!.replace("+52", "") } }] }, { text: "Lo reviso con el equipo." }]), "mi teléfono es ese");
+    expect(firstResult(r)).toMatchObject({ error: "telefono_en_uso" });
+    const [me] = await dbs.owner.db.select().from(contacts).where(eq(contacts.id, w.contactId));
+    expect((me!.profile as Record<string, unknown>).telefono_declarado).toBe(wa!.phoneE164);
+    expect(JSON.stringify(firstResult(r))).not.toContain("Otra Persona");
   });
 });

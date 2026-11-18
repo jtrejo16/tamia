@@ -23,6 +23,90 @@ const ChannelBadge = ({ channel }: { channel: string }) => {
   return <Badge tone={c.tone}>{c.label}</Badge>;
 };
 type Detail = Serialized<ConversationDetail>;
+type Relations = Detail["relations"];
+type Fmt = ReturnType<typeof makeFormatters>;
+
+const NETWORK: Record<string, string> = { whatsapp: "WhatsApp", messenger: "Messenger", instagram: "Instagram", voice: "Llamadas" };
+
+const apptText = (a: Relations["appointments"][number], fmt: Fmt) => `${fmt.dayLabel(a.startsAt)} ${fmt.time(a.startsAt)} · ${a.service}`;
+
+/** Junto a los botones: ¿este cliente ya tiene cita? (o parece tenerla por otro medio) */
+function AppointmentBadge({ relations, fmt }: { relations: Relations; fmt: Fmt }) {
+  const own = relations.appointments;
+  if (own.length > 0) {
+    return (
+      <Badge tone="green" className="max-w-full">
+        <span title={own.map((a) => apptText(a, fmt)).join("\n")}>
+          ✓ Con cita: {apptText(own[0]!, fmt)}
+          {own.length > 1 ? ` (+${own.length - 1})` : ""}
+        </span>
+      </Badge>
+    );
+  }
+  const elsewhere = relations.possibleSame.filter((p) => p.appointments.length > 0);
+  if (elsewhere.length > 0) {
+    return (
+      <Badge tone="amber" className="max-w-full">
+        <span title="Parece ser la misma persona; confírmalo y únelos para no duplicar la cita.">Puede tener cita por otro medio</span>
+      </Badge>
+    );
+  }
+  return <Badge tone="slate">Sin cita</Badge>;
+}
+
+/** Aviso "¿es la misma persona?" con las dos salidas. Una persona decide: nunca se unen solos. */
+function SameContactBanner({
+  current,
+  other,
+  fmt,
+  onDone,
+}: {
+  current: Detail["contact"];
+  other: Relations["possibleSame"][number];
+  fmt: Fmt;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState<"merge" | "dismiss" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const why = other.reason === "phone" ? "mismo teléfono" : other.reason === "declared_phone" ? "dijo tener el teléfono de ese cliente" : "mismo nombre";
+  const where = other.channels.map((c) => NETWORK[c] ?? c).join(", ");
+
+  // Se conserva el que ya tiene teléfono (el de WhatsApp/llamadas); si empatan, el de esta conversación.
+  const keepOther = Boolean(other.phone) && !current.phone;
+
+  async function merge() {
+    if (!window.confirm(`¿Unir a "${current.name}" con "${other.name}"?\n\nSe juntan sus conversaciones, citas y datos en un solo cliente. Hazlo solo si estás seguro de que es la misma persona.`)) return;
+    setBusy("merge");
+    setError(null);
+    const body = keepOther ? { keepId: other.contactId, mergeId: current.id } : { keepId: current.id, mergeId: other.contactId };
+    const r = await api<{ ok: true }>("/api/contacts/merge", { method: "POST", body });
+    setBusy(null);
+    if (!r.ok) return setError(r.message);
+    onDone();
+  }
+  async function dismiss() {
+    setBusy("dismiss");
+    setError(null);
+    const r = await api<{ ok: true }>("/api/contacts/dismiss", { method: "POST", body: { contactId: current.id, otherId: other.contactId } });
+    setBusy(null);
+    if (!r.ok) return setError(r.message);
+    onDone();
+  }
+
+  return (
+    <div className="space-y-1.5 border-b border-slate-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-900">
+      <p>
+        <strong>¿Es la misma persona que {other.name}?</strong> ({why}{where ? ` · ${where}` : ""})
+        {other.appointments.length > 0 && <> Tiene cita: {apptText(other.appointments[0]!, fmt)}{other.appointments.length > 1 ? ` (+${other.appointments.length - 1})` : ""}.</>}
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button className="px-2.5 py-1 text-xs" onClick={merge} loading={busy === "merge"} disabled={busy !== null}>Sí, es la misma: unir</Button>
+        <Button variant="secondary" className="px-2.5 py-1 text-xs" onClick={dismiss} loading={busy === "dismiss"} disabled={busy !== null}>No es</Button>
+        {error && <span className="text-xs text-rose-700">{error}</span>}
+      </div>
+    </div>
+  );
+}
 type Message = Serialized<MessageView>;
 type Filter = "all" | "attention" | "bot" | "human" | "closed";
 
@@ -298,6 +382,7 @@ function ConversationPane({ id, onBack }: { id: string; onBack: () => void }) {
           </Button>
         )}
         <Button variant="secondary" onClick={() => setNewAppt(true)} disabled={!writable} className="py-1.5">+ Nueva cita</Button>
+        <AppointmentBadge relations={c.relations} fmt={fmt} />
         {c.state !== "closed" && (
           <Button variant="ghost" onClick={() => act("close")} loading={busy === "close"} disabled={!writable} className="py-1.5">Cerrar</Button>
         )}
@@ -341,6 +426,14 @@ function ConversationPane({ id, onBack }: { id: string; onBack: () => void }) {
             </p>
           )}
         </div>
+      )}
+
+      {writable &&
+        c.relations.possibleSame.slice(0, 2).map((p) => (
+          <SameContactBanner key={p.contactId} current={c.contact} other={p} fmt={fmt} onDone={() => void detail.reload()} />
+        ))}
+      {writable && c.relations.possibleSame.length > 2 && (
+        <p className="border-b border-slate-200 bg-sky-50 px-4 py-1.5 text-xs text-sky-800">Y {c.relations.possibleSame.length - 2} posible(s) más con el mismo nombre o teléfono. Resuelve estos y aparecerán.</p>
       )}
 
       <div

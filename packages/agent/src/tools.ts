@@ -38,6 +38,7 @@ import {
   startOfLocalDay,
   weekdayName,
 } from "./format";
+import { findRelatedContacts } from "./contact-match";
 import { humanAvailability } from "./humanhours";
 import { searchKnowledge } from "./knowledge-search";
 import type { PendingAction, ToolResult, TurnContext } from "./types";
@@ -282,6 +283,10 @@ const schemas = {
     empleado_id: id,
     inicio_iso: isoInstant.describe("El inicio_iso EXACTO que devolvió buscar_disponibilidad"),
     confirmado,
+    adicional: z
+      .boolean()
+      .optional()
+      .describe("true SOLO si el cliente dice expresamente que quiere OTRA cita además de la que ya tiene (no para reprogramar)"),
   }),
   buscar_citas_del_contacto: noArgs,
   reprogramar_cita: z.object({ cita_id: id, nuevo_inicio_iso: isoInstant, confirmado }),
@@ -488,6 +493,12 @@ export const TOOLS: ToolTable = {
       }
       const tz = ctx.tenant.timezone;
       const start = new Date(args.inicio_iso);
+
+      // Evita citas duplicadas (p. ej. agendo por Facebook y ahora escribe por WhatsApp).
+      if (!args.adicional) {
+        const dup = await duplicateAppointmentCheck(ctx, args.servicio_id);
+        if (dup) return dup;
+      }
 
       const check = await withTenant(ctx.db, { tenantId: ctx.tenantId }, (tx) =>
         slotIsFree(tx, ctx, { serviceId: args.servicio_id, staffId: args.empleado_id, start }),
@@ -714,7 +725,18 @@ export const TOOLS: ToolTable = {
         throw error;
       });
       if (updated === "telefono_en_uso") {
-        return { error: "telefono_en_uso", detalle: "Ese número ya está asociado a otro cliente. Dile que un asesor lo revisará y usa escalar_a_humano." };
+        // Se anota el telefono que dijo tener: el panel sugerira al equipo "¿es la misma persona?" para unir sus contactos.
+        await withTenant(ctx.db, { tenantId: ctx.tenantId }, (tx) =>
+          tx
+            .update(contacts)
+            .set({ profile: { ...((ctx.contact.profile ?? {}) as Record<string, unknown>), telefono_declarado: phone }, updatedAt: new Date() })
+            .where(eq(contacts.id, ctx.contactId)),
+        );
+        return {
+          error: "telefono_en_uso",
+          detalle:
+            "Ese número ya está asociado a otro cliente (puede ser la misma persona por otro medio, pero no está verificado). No reveles nada de esa cuenta. Dile que un asesor lo revisará y usa escalar_a_humano (motivo: dice tener un teléfono ya registrado; verificar y unir contactos).",
+        };
       }
       ctx.contact = updated; // las siguientes herramientas del turno ya ven el nombre
       return { ok: true, nombre: updated.displayName, correo: updated.email, telefono: updated.phoneE164 };
@@ -836,6 +858,56 @@ export async function recordEscalation(
     mensaje_sugerido: ctx.escalationMessage,
     instruccion: "Informa al cliente de forma honesta y breve; no sigas resolviendo el tema tú.",
   };
+}
+
+/**
+ * ¿Ya hay una cita activa de ESTE servicio para este cliente? Si es de este mismo contacto se le puede decir cuando.
+ * Si solo parece ser la misma persona en otra red (mismo nombre o telefono), NO se revelan detalles (no se verifico su
+ * identidad): se escala para que una persona lo confirme.
+ */
+async function duplicateAppointmentCheck(ctx: TurnContext, serviceId: string): Promise<ToolResult | null> {
+  return withTenant(ctx.db, { tenantId: ctx.tenantId }, async (tx) => {
+    const active = (contactIds: string[]) =>
+      tx
+        .select({ id: appointments.id, startsAt: appointments.startsAt, service: services.name })
+        .from(appointments)
+        .innerJoin(services, eq(services.id, appointments.serviceId))
+        .where(
+          and(
+            inArray(appointments.contactId, contactIds),
+            eq(appointments.serviceId, serviceId),
+            inArray(appointments.status, [...ACTIVE_STATUSES]),
+            gt(appointments.endsAt, ctx.now),
+          ),
+        )
+        .orderBy(asc(appointments.startsAt))
+        .limit(1);
+
+    const [mine] = await active([ctx.contactId]);
+    if (mine) {
+      return {
+        error: "ya_tiene_cita",
+        cita_id: mine.id,
+        servicio: mine.service,
+        cuando: formatLocal(mine.startsAt, ctx.tenant.timezone),
+        instruccion:
+          "Este cliente YA tiene una cita de ese servicio. Díselo y pregunta si quiere cambiarla (reprogramar_cita) o conservarla. Solo si dice claramente que quiere OTRA cita adicional, vuelve a llamar crear_cita con adicional=true.",
+      };
+    }
+
+    const related = await findRelatedContacts(tx, { id: ctx.contact.id, displayName: ctx.contact.displayName, phoneE164: ctx.contact.phoneE164, profile: ctx.contact.profile });
+    if (related.length > 0) {
+      const [other] = await active(related.map((r) => r.id));
+      if (other) {
+        return {
+          error: "posible_cita_en_otro_canal",
+          instruccion:
+            "Puede que esta persona ya tenga una cita de ese servicio agendada por otro medio (otra red o teléfono), pero no está verificado. NO reveles ningún dato de esa cita. Dile con amabilidad que vas a verificarlo con el equipo para no duplicarla y usa escalar_a_humano (motivo: posible cita duplicada por otro medio).",
+        };
+      }
+    }
+    return null;
+  });
 }
 
 // ------------------------------------------- agendar a mano (desde el panel)
