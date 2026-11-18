@@ -5,6 +5,7 @@ import {
   contacts,
   conversationMemory,
   conversations,
+  handoffs,
   messages,
   tenants,
   usageEvents,
@@ -12,6 +13,7 @@ import {
   type Database,
   type Message,
   type ProposedAction,
+  type Tx,
 } from "@empleado/db";
 import {
   assertApprovedModel,
@@ -20,7 +22,7 @@ import {
   type ChatMessage,
   type LLMProvider,
 } from "@empleado/llm";
-import { and, count, desc, eq, gt } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte } from "drizzle-orm";
 import { formatLocal, toPlainText, toWhatsAppText } from "./format";
 import { MAX_RAW_HISTORY, maybeSummarize, messageText } from "./memory";
 import { GENERIC_PACK, loadPack, type Pack } from "./pack";
@@ -123,6 +125,33 @@ function toChatHistory(history: Message[]): ChatMessage[] {
   return out;
 }
 
+/** Segundos que se espera antes de considerar que un mensaje guardado sin respuesta quedo "colgado" (y no esta en proceso en otro trabajo). */
+const STUCK_AFTER_MS = 90_000;
+
+/**
+ * ¿El mensaje entrante ya estaba guardado pero NADIE respondio (ni respuesta, ni borrador, ni escalacion)?
+ * Pasa cuando el servicio se detuvo a mitad del turno. Si esta reciente se deja en paz: otro trabajo lo esta procesando.
+ */
+async function isUnansweredRetry(tx: Tx, channelId: string, conversationId: string, externalId: string): Promise<boolean> {
+  const [existing] = await tx
+    .select({ createdAt: messages.createdAt, direction: messages.direction })
+    .from(messages)
+    .where(and(eq(messages.channelId, channelId), eq(messages.externalId, externalId)));
+  if (!existing || existing.direction !== "in") return false;
+  if (Date.now() - existing.createdAt.getTime() < STUCK_AFTER_MS) return false;
+
+  const [reply] = await tx
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "out"), gte(messages.createdAt, existing.createdAt)))
+    .limit(1);
+  if (reply) return false;
+  const [draft] = await tx.select({ id: approvals.id }).from(approvals).where(and(eq(approvals.conversationId, conversationId), gte(approvals.createdAt, existing.createdAt))).limit(1);
+  if (draft) return false;
+  const [handoff] = await tx.select({ id: handoffs.id }).from(handoffs).where(and(eq(handoffs.conversationId, conversationId), gte(handoffs.createdAt, existing.createdAt))).limit(1);
+  return !handoff;
+}
+
 /** Procesa UN mensaje entrante y decide que hacer con la respuesta. */
 export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
   const { db, llm, tenantId, conversationId } = input;
@@ -157,7 +186,13 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
       })
       .onConflictDoNothing()
       .returning({ id: messages.id });
-    if (saved.length === 0) return { duplicate: true as const };
+    if (saved.length === 0) {
+      // Mensaje ya guardado. Normalmente es una repeticion y se ignora. PERO si el servicio se reinicio a la mitad
+      // (un despliegue) el mensaje quedo guardado SIN respuesta: entonces se retoma, para que el cliente no se quede sin contestar.
+      if (!input.externalMessageId || !(await isUnansweredRetry(tx, conversation.channelId, conversationId, input.externalMessageId))) {
+        return { duplicate: true as const };
+      }
+    }
 
     await tx
       .update(conversations)

@@ -303,6 +303,38 @@ describe("escalamiento y robustez", () => {
     expect(llm.requests).toHaveLength(1);
   });
 
+  it("si el servicio se reinicio a mitad del turno, el reintento SI contesta el mensaje que quedo guardado sin respuesta", async () => {
+    const w = await world();
+    const stuck = (externalId: string, ageMs: number) =>
+      dbs.owner.db.insert(messages).values({
+        tenantId: w.tenantId,
+        conversationId: w.conversationId,
+        channelId: w.channelId,
+        direction: "in",
+        sender: "contact",
+        type: "text",
+        body: "quiero una cita",
+        externalId,
+        status: "received",
+        createdAt: new Date(Date.now() - ageMs),
+      });
+
+    // Guardado hace 5 min y sin respuesta: se retoma (y se contesta una sola vez).
+    await stuck("mid.STUCK", 5 * 60_000);
+    const llm = new FakeLLM([{ text: "Claro, ¿para qué día?" }]);
+    const r = await turn(w, llm, "quiero una cita", { externalMessageId: "mid.STUCK" });
+    expect(r.action).toBe("send");
+    expect(llm.requests).toHaveLength(1);
+    const again = await turn(w, llm, "quiero una cita", { externalMessageId: "mid.STUCK" });
+    expect(again).toMatchObject({ action: "none", reason: "duplicate" });
+    expect(llm.requests).toHaveLength(1);
+
+    // Guardado hace segundos: otro trabajo lo esta procesando, no se duplica la respuesta.
+    await stuck("mid.FRESH", 5_000);
+    const fresh = await turn(w, new FakeLLM([{ text: "no debe usarse" }]), "hola", { externalMessageId: "mid.FRESH" });
+    expect(fresh).toMatchObject({ action: "none", reason: "duplicate" });
+  });
+
   it("si el modelo cicla con herramientas, corta a las 5 vueltas y escala", async () => {
     const w = await world();
     const llm = new FakeLLM([{ tools: [{ name: "consultar_servicios", args: {} }] }]);
