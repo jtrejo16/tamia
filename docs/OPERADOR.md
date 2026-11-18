@@ -8,6 +8,26 @@ Pantalla `/operador` (solo para usuarios marcados como operador de la plataforma
 - **Filtros** (con contador) y búsqueda por nombre o correo: por aprobar, con problemas, vencidos, por vencer, pagando, en prueba, sin canal, cortesía/cancelados.
 - Por cliente: estado de cobro con fecha y días, **semáforo de salud**, chips de **WhatsApp / Messenger / Instagram** (verde = conectado, rojo = error, gris = desconectado), mensajes de 7 días y último mensaje.
 
+## Costos y rentabilidad (`/operador/costos`)
+Cuánto cuesta atender a cada cliente y a toda la plataforma, por periodo (este mes, mes pasado, 30 o 7 días), contra lo que aporta cada uno.
+
+| Concepto | De dónde sale |
+|---|---|
+| IA (OpenRouter) | **Real**: costo que reporta OpenRouter en cada respuesta |
+| Llamadas (Retell) | **Real**: `call_cost` que Retell envía al terminar cada llamada. Las llamadas anteriores a este cambio (o sin costo) se estiman con `retellFallbackPerMinute` |
+| Telefonía (DIDWW/troncal) | **Estimado**: minutos de llamada × `phonePerMinute` |
+| WhatsApp (Meta) | **Estimado**: plantillas enviadas × tarifa de su categoría (marketing / utilidad / autenticación). Las respuestas dentro de las 24 h no las cobra Meta |
+| Costos fijos | Los defines tú (servidor, número telefónico, dominio…) y se reparten por los días del periodo |
+
+Por cliente se ve costo por concepto, ingreso (precio de lista si paga, prorrateado), y **margen**; un cliente en prueba o de cortesía sale en negativo: es lo que cuesta atenderlo. Arriba: ingreso, costo total, ganancia y cuánto del costo es estimado.
+
+Configuración (variables del servicio **web** en Railway, todas opcionales):
+- `COST_RATES` — JSON parcial, p. ej. `{"whatsapp":{"marketing":0.05},"phonePerMinute":0.02}`. Los valores por defecto son estimaciones para México: **ajústalos con tu factura de Meta/DIDWW/Retell**.
+- `COST_FIXED_MONTHLY_USD` — JSON, p. ej. `{"Railway":20,"Número DIDWW":3}`.
+- `USD_MXN` — tipo de cambio (por defecto 18).
+
+Límites: no incluye comisión de Mercado Pago ni IVA; Meta no se consulta en vivo (es estimación por conteo de plantillas), así que la cifra real está en tu cuenta de Meta Business.
+
 ## Estado de cobro (cómo se decide)
 Usa la misma regla que el worker (`accessFor`):
 

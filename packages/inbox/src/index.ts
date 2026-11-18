@@ -12,6 +12,7 @@ export * from "./billing";
 export * from "./mercadopago";
 export * from "./operator";
 export * from "./operator-console";
+export * from "./operator-costs";
 export * from "./channel";
 export * from "./social-connect";
 export * from "./google-calendar";

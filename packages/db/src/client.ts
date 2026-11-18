@@ -384,6 +384,48 @@ export async function operatorOverviewRows(db: Database, userId: string): Promis
   });
 }
 
+// ---------------------------------------------------------------- costos (migracion 0020)
+
+export interface OperatorCostRow {
+  tenantId: string;
+  aiMicros: number;
+  aiTokensIn: number;
+  aiTokensOut: number;
+  callCount: number;
+  callSeconds: number;
+  callRecordedMicros: number;
+  callUnpricedSeconds: number;
+  tplMarketing: number;
+  tplUtility: number;
+  tplAuthentication: number;
+  tplUnknown: number;
+  waIn: number;
+  waOut: number;
+}
+
+/** Consumo de todos los negocios en [from, to) para el operador (la base valida que lo sea). */
+export async function operatorCostRows(db: Database, userId: string, from: Date, to: Date): Promise<OperatorCostRow[]> {
+  return asOperator(db, userId, async (tx) => {
+    const rows = await tx.execute<Record<string, any>>(sql`select * from operator_costs(${from.toISOString()}::timestamptz, ${to.toISOString()}::timestamptz)`);
+    return rows.map((r) => ({
+      tenantId: r.tenant_id,
+      aiMicros: Number(r.ai_micros),
+      aiTokensIn: Number(r.ai_tokens_in),
+      aiTokensOut: Number(r.ai_tokens_out),
+      callCount: Number(r.call_count),
+      callSeconds: Number(r.call_seconds),
+      callRecordedMicros: Number(r.call_recorded_micros),
+      callUnpricedSeconds: Number(r.call_unpriced_seconds),
+      tplMarketing: Number(r.tpl_marketing),
+      tplUtility: Number(r.tpl_utility),
+      tplAuthentication: Number(r.tpl_authentication),
+      tplUnknown: Number(r.tpl_unknown),
+      waIn: Number(r.wa_in),
+      waOut: Number(r.wa_out),
+    }));
+  });
+}
+
 export async function operatorExtendTrialRow(db: Database, userId: string, tenantId: string, days: number): Promise<boolean> {
   return asOperator(db, userId, async (tx) => {
     const rows = await tx.execute<{ ok: boolean }>(sql`select operator_extend_trial(${tenantId}, ${days}) as ok`);

@@ -153,7 +153,10 @@ export function OperatorView() {
           <h1 className="text-lg font-semibold text-slate-900">Operador</h1>
           <p className="text-sm text-slate-500">Todos tus clientes: quién paga, quién está por vencer y si su servicio funciona.</p>
         </div>
-        <Button variant="secondary" className="px-3 py-1.5" onClick={() => void reload()}>Actualizar</Button>
+        <div className="flex gap-2">
+          <Link href="/operador/costos" className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50">Costos y rentabilidad</Link>
+          <Button variant="secondary" className="px-3 py-1.5" onClick={() => void reload()}>Actualizar</Button>
+        </div>
       </div>
 
       {/* ---- estado de la plataforma */}

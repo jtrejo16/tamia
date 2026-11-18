@@ -254,6 +254,8 @@ export const calls = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),
     durationSeconds: integer("duration_seconds"),
+    /** Costo real que reporta Retell, en millonesimas de dolar. null = aun no lo reporta. */
+    costUsdMicros: integer("cost_usd_micros"),
     summary: text("summary"),
     sentiment: text("sentiment"),
     disconnectionReason: text("disconnection_reason"),

@@ -217,6 +217,14 @@ export interface RetellCall {
   disconnection_reason?: string;
   transcript_object?: Array<{ role?: string; content?: string }>;
   call_analysis?: { call_summary?: string; user_sentiment?: string };
+  /** Costo de la llamada segun Retell; `combined_cost` viene en CENTAVOS de dolar. */
+  call_cost?: { combined_cost?: number };
+}
+
+/** Centavos de dolar (Retell) a millonesimas de dolar; null si no vino un numero valido. */
+export function retellCostMicros(call: Pick<RetellCall, "call_cost">): number | null {
+  const cents = call.call_cost?.combined_cost;
+  return typeof cents === "number" && Number.isFinite(cents) && cents >= 0 ? Math.round(cents * 10_000) : null;
 }
 
 /** Telefono del que llama, en el mismo formato que los contactos; null si es anonimo o no parece telefono. */
@@ -320,7 +328,7 @@ export async function handleCallEvent(db: Database, event: { event: string; call
     await withTenant(db, { tenantId }, async (tx) => {
       await tx
         .update(calls)
-        .set({ status: reason?.startsWith("error") ? "failed" : "ended", endedAt, durationSeconds: duration, disconnectionReason: reason, updatedAt: new Date() })
+        .set({ status: reason?.startsWith("error") ? "failed" : "ended", endedAt, durationSeconds: duration, disconnectionReason: reason, ...(retellCostMicros(call) !== null ? { costUsdMicros: retellCostMicros(call) } : {}), updatedAt: new Date() })
         .where(eq(calls.id, row.id));
       // La transcripcion pasa a ser mensajes de la conversacion de voz: se ve en la bandeja.
       if (row.conversationId && call.transcript_object?.length) {
@@ -357,7 +365,12 @@ export async function handleCallEvent(db: Database, event: { event: string; call
     await withTenant(db, { tenantId }, (tx) =>
       tx
         .update(calls)
-        .set({ summary: call.call_analysis?.call_summary ?? null, sentiment: call.call_analysis?.user_sentiment ?? null, updatedAt: new Date() })
+        .set({
+          summary: call.call_analysis?.call_summary ?? null,
+          sentiment: call.call_analysis?.user_sentiment ?? null,
+          ...(retellCostMicros(call) !== null ? { costUsdMicros: retellCostMicros(call) } : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(calls.id, row.id)),
     );
   }
