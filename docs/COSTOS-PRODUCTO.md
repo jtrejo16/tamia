@@ -131,6 +131,19 @@ Al **sincronizar** el agente (Ajustes → Llamadas → Sincronizar, o desde el O
 - **Tope de duración** por llamada (`VOICE_MAX_CALL_MINUTES`, por defecto 10 min; Retell usa 60 por defecto).
 - **Colgar tras silencio** (`VOICE_SILENCE_SECONDS`, por defecto 20 s; Retell usa 10 minutos por defecto).
 
+**Medición real con el modelo nuevo (18-nov, dos llamadas de prueba de ≈ 48 s):**
+
+| Concepto | `gpt-5.4-mini` | `gpt-5.6-luna` |
+|---|---|---|
+| Motor de voz (US$0.055/min) | 4.31¢ | 4.40¢ |
+| Voz sintetizada (US$0.015/min) | 1.18¢ | 1.20¢ |
+| Modelo de lenguaje | **1.88¢** (US$0.024/min) | **0.51¢** (US$0.0064/min) |
+| Análisis posterior a la llamada (fijo por llamada) | 2.08¢ | 2.08¢ |
+| **Total de la llamada** | **US$0.094** | **US$0.082** |
+| Latencia del modelo (mediana) | 1,930 ms | **311 ms** (extremo a extremo 564 ms) |
+
+Hallazgo: el **análisis posterior a la llamada** (resumen, sentimiento y «exitosa») cuesta **≈ US$0.021 FIJOS por llamada** con el modelo por defecto de Retell (`gpt-5.6-terra`), más que el propio modelo de la llamada. En llamadas cortas es el 25 % del costo. Por eso el sistema ahora también manda `RETELL_ANALYSIS_MODEL` (por defecto **`claude-5.5-haiku`**: en el panel de Retell, en «Post call extraction», aparece como **gratis**; verifícalo con el desglose de la próxima llamada). Si al medir cobra algo, alternativas: `gpt-5.6-luna` o `gpt-5-nano`.
+
 Después de desplegar hay que **volver a sincronizar** cada agente y hacer una **llamada de prueba** (agendar una cita completa) para confirmar que el modelo chico sigue usando bien las herramientas. El efecto en el costo se ve en Retell por llamada (ya se guarda) y en Operador → Costos y rentabilidad.
 
 ## 7. Qué falta confirmar (no inventé)

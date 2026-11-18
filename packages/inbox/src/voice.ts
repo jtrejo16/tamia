@@ -108,7 +108,7 @@ export async function syncVoiceAgent(
   db: Database,
   retell: RetellClient | null,
   ctx: PanelContext,
-  input: { baseUrl: string; defaultVoiceId?: string; economy?: { model?: string; maxCallMs?: number; silenceMs?: number } },
+  input: { baseUrl: string; defaultVoiceId?: string; economy?: { model?: string; analysisModel?: string; maxCallMs?: number; silenceMs?: number } },
 ): Promise<Success<{ agentId: string }> | Failure<VoiceSyncError>> {
   if (!can(ctx.role, "configure")) return fail("forbidden");
   if (!retell) return fail("retell_unavailable");
@@ -187,6 +187,8 @@ export async function syncVoiceAgent(
     // Topes para no pagar minutos de mas: duracion maxima y silencio antes de colgar.
     ...(input.economy?.maxCallMs ? { max_call_duration_ms: input.economy.maxCallMs } : {}),
     ...(input.economy?.silenceMs ? { end_call_after_silence_ms: input.economy.silenceMs } : {}),
+    // El analisis posterior (resumen y sentimiento) cuesta ≈ US$0.02 fijos por llamada con el modelo por defecto de Retell.
+    ...(input.economy?.analysisModel ? { post_call_analysis_model: input.economy.analysisModel } : {}),
   };
 
   try {

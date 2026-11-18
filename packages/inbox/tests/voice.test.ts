@@ -164,10 +164,10 @@ describe("ajustes y sincronizacion con Retell", () => {
     // Retell ignora el campo antiguo `model` si el modelo ya trae `model_config`: se manda el actual.
     expect(rc.find((c) => c.path === "/create-retell-llm")!.body.model_config).toEqual({ type: "cascading", primary: { model: "gpt-5.6-luna", tier: "standard" } });
     expect(rc.find((c) => c.path === "/create-retell-llm")!.body).not.toHaveProperty("model");
-    expect(rc.find((c) => c.path === "/create-agent")!.body).toMatchObject({ max_call_duration_ms: 600_000, end_call_after_silence_ms: 20_000 });
+    expect(rc.find((c) => c.path === "/create-agent")!.body).toMatchObject({ max_call_duration_ms: 600_000, end_call_after_silence_ms: 20_000, post_call_analysis_model: "claude-5.5-haiku" });
     await syncVoiceAgent(dbs.app.db, client, w.owner, { baseUrl: "https://panel.test", economy });
     expect(rc.find((c) => c.path.startsWith("/update-retell-llm/"))!.body.model_config).toEqual({ type: "cascading", primary: { model: "gpt-5.6-luna", tier: "standard" } });
-    expect(rc.find((c) => c.path.startsWith("/update-agent/"))!.body).toMatchObject({ max_call_duration_ms: 600_000, end_call_after_silence_ms: 20_000 });
+    expect(rc.find((c) => c.path.startsWith("/update-agent/"))!.body).toMatchObject({ max_call_duration_ms: 600_000, end_call_after_silence_ms: 20_000, post_call_analysis_model: "claude-5.5-haiku" });
 
     // Sin ajustes (llamadas anteriores del codigo): no se manda modelo ni topes y Retell usa los suyos.
     const w2 = await world();
@@ -179,13 +179,15 @@ describe("ajustes y sincronizacion con Retell", () => {
   });
 
   it("lee los ajustes de costo del entorno y descarta valores fuera de rango", () => {
-    expect(voiceCostSettings({})).toEqual({ model: "gpt-5.6-luna", maxCallMs: 600_000, silenceMs: 20_000 });
-    expect(voiceCostSettings({ RETELL_LLM_MODEL: "gpt-5-nano", VOICE_MAX_CALL_MINUTES: "5", VOICE_SILENCE_SECONDS: "30" })).toEqual({ model: "gpt-5-nano", maxCallMs: 300_000, silenceMs: 30_000 });
+    expect(voiceCostSettings({})).toEqual({ model: "gpt-5.6-luna", analysisModel: "claude-5.5-haiku", maxCallMs: 600_000, silenceMs: 20_000 });
+    expect(voiceCostSettings({ RETELL_LLM_MODEL: "gpt-5-nano", VOICE_MAX_CALL_MINUTES: "5", VOICE_SILENCE_SECONDS: "30" })).toEqual({ model: "gpt-5-nano", analysisModel: "claude-5.5-haiku", maxCallMs: 300_000, silenceMs: 30_000 });
     // "default" o vacio: se usa el modelo de Retell (no se manda ninguno).
     expect(voiceCostSettings({ RETELL_LLM_MODEL: "default" }).model).toBeUndefined();
+    expect(voiceCostSettings({ RETELL_ANALYSIS_MODEL: "default" }).analysisModel).toBeUndefined();
+    expect(voiceCostSettings({ RETELL_ANALYSIS_MODEL: "gpt-5-nano" }).analysisModel).toBe("gpt-5-nano");
     expect(voiceCostSettings({ RETELL_LLM_MODEL: "" }).model).toBeUndefined();
     // Basura: vuelven a los valores recomendados (Retell exige minimo 10 s de silencio y 1 min de llamada).
-    expect(voiceCostSettings({ RETELL_LLM_MODEL: "raro; drop table", VOICE_MAX_CALL_MINUTES: "0", VOICE_SILENCE_SECONDS: "3" })).toEqual({ model: "gpt-5.6-luna", maxCallMs: 600_000, silenceMs: 20_000 });
+    expect(voiceCostSettings({ RETELL_LLM_MODEL: "raro; drop table", VOICE_MAX_CALL_MINUTES: "0", VOICE_SILENCE_SECONDS: "3" })).toEqual({ model: "gpt-5.6-luna", analysisModel: "claude-5.5-haiku", maxCallMs: 600_000, silenceMs: 20_000 });
     expect(voiceCostSettings({ VOICE_MAX_CALL_MINUTES: "500", VOICE_SILENCE_SECONDS: "abc" })).toMatchObject({ maxCallMs: 600_000, silenceMs: 20_000 });
   });
 

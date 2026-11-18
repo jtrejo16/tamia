@@ -60,30 +60,35 @@ export interface RetellAgentInput {
   max_call_duration_ms?: number;
   /** Cuelga tras tanto silencio (ms). Retell: minimo 10,000; por defecto 10 minutos. */
   end_call_after_silence_ms?: number;
+  /** Modelo del analisis posterior a la llamada (resumen y sentimiento). Retell usa gpt-5.6-terra por defecto: ~US$0.02 FIJOS por llamada. */
+  post_call_analysis_model?: string;
 }
 
 /**
  * Ajustes para que las llamadas cuesten menos (la voz es lo mas caro del sistema; ver docs/COSTOS-PRODUCTO.md):
  *  - RETELL_LLM_MODEL: modelo de lenguaje del agente. Por defecto "gpt-5.6-luna" (rapido, con herramientas confiables y de costo bajo). Puedes poner
  *    "gpt-5-nano" o "gemini-3.5-flash-lite" (mas baratos) o "claude-5.5-haiku". Vacio o "default" = el de Retell.
+ *  - RETELL_ANALYSIS_MODEL: modelo del analisis posterior a la llamada (resumen, sentimiento y exito). Retell usa por defecto
+ *    gpt-5.6-terra, que cuesta ≈ US$0.02 FIJOS por llamada (mas que el propio modelo de la llamada). Por defecto "claude-5.5-haiku" (en el panel de Retell aparece como gratis para la extraccion posterior a la llamada).
  *  - VOICE_MAX_CALL_MINUTES: tope por llamada (1 a 120; por defecto 10).
  *  - VOICE_SILENCE_SECONDS: cuelga tras tanto silencio (10 a 600; por defecto 20).
  * Un valor fuera de rango se ignora y se usa el de por defecto.
  */
-export function voiceCostSettings(env: Record<string, string | undefined>): { model?: string; maxCallMs: number; silenceMs: number } {
+export function voiceCostSettings(env: Record<string, string | undefined>): { model?: string; analysisModel?: string; maxCallMs: number; silenceMs: number } {
   const int = (v: string | undefined, min: number, max: number, fallback: number) => {
     const n = Number(v);
     return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
   };
   // Sin variable: modelo economico recomendado. Vacia o "default": el de Retell. Con un nombre mal escrito: el recomendado.
-  const raw = env.RETELL_LLM_MODEL?.trim();
-  let model: string | undefined = "gpt-5.6-luna";
-  if (raw !== undefined) {
-    if (raw === "" || raw.toLowerCase() === "default") model = undefined;
-    else if (/^[a-z0-9.-]{2,40}$/i.test(raw)) model = raw;
-  }
+  const pick = (value: string | undefined, recommended: string): string | undefined => {
+    const raw = value?.trim();
+    if (raw === undefined) return recommended;
+    if (raw === "" || raw.toLowerCase() === "default") return undefined;
+    return /^[a-z0-9.-]{2,40}$/i.test(raw) ? raw : recommended;
+  };
   return {
-    model,
+    model: pick(env.RETELL_LLM_MODEL, "gpt-5.6-luna"),
+    analysisModel: pick(env.RETELL_ANALYSIS_MODEL, "claude-5.5-haiku"),
     maxCallMs: int(env.VOICE_MAX_CALL_MINUTES, 1, 120, 10) * 60_000,
     silenceMs: int(env.VOICE_SILENCE_SECONDS, 10, 600, 20) * 1000,
   };
@@ -168,6 +173,7 @@ export class RetellClient {
       webhook_url: input.webhook_url,
       ...(input.max_call_duration_ms ? { max_call_duration_ms: input.max_call_duration_ms } : {}),
       ...(input.end_call_after_silence_ms ? { end_call_after_silence_ms: input.end_call_after_silence_ms } : {}),
+      ...(input.post_call_analysis_model ? { post_call_analysis_model: input.post_call_analysis_model } : {}),
     });
     if (!r.agent_id) throw new RetellError("Retell no devolvio el id del agente", 502);
     return { agentId: r.agent_id };
@@ -182,6 +188,7 @@ export class RetellClient {
       webhook_url: input.webhook_url,
       ...(input.max_call_duration_ms ? { max_call_duration_ms: input.max_call_duration_ms } : {}),
       ...(input.end_call_after_silence_ms ? { end_call_after_silence_ms: input.end_call_after_silence_ms } : {}),
+      ...(input.post_call_analysis_model ? { post_call_analysis_model: input.post_call_analysis_model } : {}),
     });
   }
 }
