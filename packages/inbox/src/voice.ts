@@ -108,7 +108,7 @@ export async function syncVoiceAgent(
   db: Database,
   retell: RetellClient | null,
   ctx: PanelContext,
-  input: { baseUrl: string; defaultVoiceId?: string },
+  input: { baseUrl: string; defaultVoiceId?: string; economy?: { model?: string; maxCallMs?: number; silenceMs?: number } },
 ): Promise<Success<{ agentId: string }> | Failure<VoiceSyncError>> {
   if (!can(ctx.role, "configure")) return fail("forbidden");
   if (!retell) return fail("retell_unavailable");
@@ -176,12 +176,17 @@ export async function syncVoiceAgent(
     general_prompt: buildVoicePrompt({ tenant, config, allowBooking: settings.allowBooking, transfer }),
     begin_message: settings.greeting || DEFAULT_GREETING(tenant.name, config.assistantName),
     general_tools: tools,
+    // Modelo economico (la voz es lo mas caro): ver voiceCostSettings en retell.ts.
+    ...(input.economy?.model ? { model: input.economy.model } : {}),
   };
   const agent = {
     agent_name: `${tenant.name} (${tenant.slug})`.slice(0, 120),
     voice_id: voiceId,
     language: settings.language,
     webhook_url: `${base}/api/voice/webhook`,
+    // Topes para no pagar minutos de mas: duracion maxima y silencio antes de colgar.
+    ...(input.economy?.maxCallMs ? { max_call_duration_ms: input.economy.maxCallMs } : {}),
+    ...(input.economy?.silenceMs ? { end_call_after_silence_ms: input.economy.silenceMs } : {}),
   };
 
   try {

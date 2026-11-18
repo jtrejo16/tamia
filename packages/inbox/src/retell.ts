@@ -39,6 +39,8 @@ export interface RetellLlmInput {
   general_prompt: string;
   begin_message: string;
   general_tools: RetellTool[];
+  /** Modelo de lenguaje del agente. Sin valor, Retell usa el suyo por defecto (de los mas caros). */
+  model?: string;
 }
 
 export interface RetellAgentInput {
@@ -47,6 +49,37 @@ export interface RetellAgentInput {
   voice_id: string;
   language: string;
   webhook_url: string;
+  /** Tope de duracion de una llamada (ms). Retell: 60,000 a 7,200,000; por defecto 1 hora. */
+  max_call_duration_ms?: number;
+  /** Cuelga tras tanto silencio (ms). Retell: minimo 10,000; por defecto 10 minutos. */
+  end_call_after_silence_ms?: number;
+}
+
+/**
+ * Ajustes para que las llamadas cuesten menos (la voz es lo mas caro del sistema; ver docs/COSTOS-PRODUCTO.md):
+ *  - RETELL_LLM_MODEL: modelo de lenguaje del agente. Por defecto "gpt-5.4-mini" (chico y con herramientas). Puedes poner
+ *    "gpt-5-nano" o "gemini-3.5-flash-lite" (mas baratos) o "claude-5.5-haiku". Vacio o "default" = el de Retell.
+ *  - VOICE_MAX_CALL_MINUTES: tope por llamada (1 a 120; por defecto 10).
+ *  - VOICE_SILENCE_SECONDS: cuelga tras tanto silencio (10 a 600; por defecto 20).
+ * Un valor fuera de rango se ignora y se usa el de por defecto.
+ */
+export function voiceCostSettings(env: Record<string, string | undefined>): { model?: string; maxCallMs: number; silenceMs: number } {
+  const int = (v: string | undefined, min: number, max: number, fallback: number) => {
+    const n = Number(v);
+    return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
+  };
+  // Sin variable: modelo economico recomendado. Vacia o "default": el de Retell. Con un nombre mal escrito: el recomendado.
+  const raw = env.RETELL_LLM_MODEL?.trim();
+  let model: string | undefined = "gpt-5.4-mini";
+  if (raw !== undefined) {
+    if (raw === "" || raw.toLowerCase() === "default") model = undefined;
+    else if (/^[a-z0-9.-]{2,40}$/i.test(raw)) model = raw;
+  }
+  return {
+    model,
+    maxCallMs: int(env.VOICE_MAX_CALL_MINUTES, 1, 120, 10) * 60_000,
+    silenceMs: int(env.VOICE_SILENCE_SECONDS, 10, 600, 20) * 1000,
+  };
 }
 
 export interface RetellVoice {
@@ -126,6 +159,8 @@ export class RetellClient {
       voice_id: input.voice_id,
       language: input.language,
       webhook_url: input.webhook_url,
+      ...(input.max_call_duration_ms ? { max_call_duration_ms: input.max_call_duration_ms } : {}),
+      ...(input.end_call_after_silence_ms ? { end_call_after_silence_ms: input.end_call_after_silence_ms } : {}),
     });
     if (!r.agent_id) throw new RetellError("Retell no devolvio el id del agente", 502);
     return { agentId: r.agent_id };
@@ -138,6 +173,8 @@ export class RetellClient {
       voice_id: input.voice_id,
       language: input.language,
       webhook_url: input.webhook_url,
+      ...(input.max_call_duration_ms ? { max_call_duration_ms: input.max_call_duration_ms } : {}),
+      ...(input.end_call_after_silence_ms ? { end_call_after_silence_ms: input.end_call_after_silence_ms } : {}),
     });
   }
 }

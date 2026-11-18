@@ -1,4 +1,4 @@
-import { syncVoiceAgent } from "@empleado/inbox";
+import { syncVoiceAgent, voiceCostSettings } from "@empleado/inbox";
 import { authed, respond } from "@/lib/api";
 import { getDb, getRetell, publicBaseUrl } from "@/lib/server";
 
@@ -11,6 +11,7 @@ export const POST = authed(async (req, ctx) =>
     await syncVoiceAgent(getDb(), getRetell(), ctx, {
       baseUrl: publicBaseUrl(req.nextUrl.origin),
       defaultVoiceId: process.env.RETELL_VOICE_ID?.trim() || undefined,
+      economy: voiceCostSettings(process.env),
     }),
   ),
 );

@@ -13,6 +13,7 @@ import {
   sendHumanMessage,
   syncVoiceAgent,
   verifyRetellSignature,
+  voiceCostSettings,
   voiceToolNames,
   type RetellCall,
 } from "../src";
@@ -152,6 +153,38 @@ describe("ajustes y sincronizacion con Retell", () => {
     expect(rc.filter((c) => c.path === "/create-retell-llm")).toHaveLength(1);
     expect(rc.some((c) => c.method === "PATCH" && c.path.startsWith("/update-retell-llm/"))).toBe(true);
     expect(rc.some((c) => c.method === "PATCH" && c.path.startsWith("/update-agent/"))).toBe(true);
+  });
+
+  it("manda a Retell el modelo economico y los topes de duracion y silencio (crear y actualizar)", async () => {
+    const w = await world();
+    await saveVoiceSettings(dbs.app.db, w.owner, { enabled: true, allowBooking: true, voiceId: "voz-1" });
+    const { client, calls: rc } = fakeRetell();
+    const economy = voiceCostSettings({});
+    await syncVoiceAgent(dbs.app.db, client, w.owner, { baseUrl: "https://panel.test", economy });
+    expect(rc.find((c) => c.path === "/create-retell-llm")!.body.model).toBe("gpt-5.4-mini");
+    expect(rc.find((c) => c.path === "/create-agent")!.body).toMatchObject({ max_call_duration_ms: 600_000, end_call_after_silence_ms: 20_000 });
+    await syncVoiceAgent(dbs.app.db, client, w.owner, { baseUrl: "https://panel.test", economy });
+    expect(rc.find((c) => c.path.startsWith("/update-retell-llm/"))!.body.model).toBe("gpt-5.4-mini");
+    expect(rc.find((c) => c.path.startsWith("/update-agent/"))!.body).toMatchObject({ max_call_duration_ms: 600_000, end_call_after_silence_ms: 20_000 });
+
+    // Sin ajustes (llamadas anteriores del codigo): no se manda modelo ni topes y Retell usa los suyos.
+    const w2 = await world();
+    await saveVoiceSettings(dbs.app.db, w2.owner, { enabled: true, allowBooking: false, voiceId: "v2" });
+    const fake2 = fakeRetell();
+    await syncVoiceAgent(dbs.app.db, fake2.client, w2.owner, { baseUrl: "https://panel.test" });
+    expect(fake2.calls.find((c) => c.path === "/create-retell-llm")!.body).not.toHaveProperty("model");
+    expect(fake2.calls.find((c) => c.path === "/create-agent")!.body).not.toHaveProperty("max_call_duration_ms");
+  });
+
+  it("lee los ajustes de costo del entorno y descarta valores fuera de rango", () => {
+    expect(voiceCostSettings({})).toEqual({ model: "gpt-5.4-mini", maxCallMs: 600_000, silenceMs: 20_000 });
+    expect(voiceCostSettings({ RETELL_LLM_MODEL: "gpt-5-nano", VOICE_MAX_CALL_MINUTES: "5", VOICE_SILENCE_SECONDS: "30" })).toEqual({ model: "gpt-5-nano", maxCallMs: 300_000, silenceMs: 30_000 });
+    // "default" o vacio: se usa el modelo de Retell (no se manda ninguno).
+    expect(voiceCostSettings({ RETELL_LLM_MODEL: "default" }).model).toBeUndefined();
+    expect(voiceCostSettings({ RETELL_LLM_MODEL: "" }).model).toBeUndefined();
+    // Basura: vuelven a los valores recomendados (Retell exige minimo 10 s de silencio y 1 min de llamada).
+    expect(voiceCostSettings({ RETELL_LLM_MODEL: "raro; drop table", VOICE_MAX_CALL_MINUTES: "0", VOICE_SILENCE_SECONDS: "3" })).toEqual({ model: "gpt-5.4-mini", maxCallMs: 600_000, silenceMs: 20_000 });
+    expect(voiceCostSettings({ VOICE_MAX_CALL_MINUTES: "500", VOICE_SILENCE_SECONDS: "abc" })).toMatchObject({ maxCallMs: 600_000, silenceMs: 20_000 });
   });
 
   it("sin agendar, el agente NO recibe las funciones de agenda", async () => {

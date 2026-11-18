@@ -42,8 +42,10 @@ export interface CostConfig {
 export const DEFAULT_RATES: CostRates = {
   whatsapp: { marketing: 0.0436, utility: 0.0085, authentication: 0.0085, service: 0.0085 },
   serviceFreePerMonth: 1000,
-  phonePerMinute: 0.015,
-  retellFallbackPerMinute: 0.09,
+  // DIDWW (medido, nov-2026): US$0.01 por minuto INICIADO (redondea hacia arriba). Con llamadas de 2-3 min el efectivo es ≈ US$0.013 por minuto real.
+  phonePerMinute: 0.013,
+  // Medido en la cuenta de Retell (nov-2026): ≈ US$0.16-0.19 por minuto.
+  retellFallbackPerMinute: 0.17,
 };
 
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined);

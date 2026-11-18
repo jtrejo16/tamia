@@ -8,6 +8,7 @@ import {
   operatorSupportContext,
   syncTemplates,
   syncVoiceAgent,
+  voiceCostSettings,
 } from "@empleado/inbox";
 import { NextResponse } from "next/server";
 import { authed, failure, readJson, respond, str } from "@/lib/api";
@@ -56,7 +57,7 @@ export const POST = authed<{ action: string }>(async (req, ctx, { action }) => {
       return NextResponse.json({ ok: true, whatsapp, social: social && social.ok ? social.checks : [], socialAvailable: sd !== null });
     }
     case "voice-sync": {
-      const r = await syncVoiceAgent(db, getRetell(), sctx, { baseUrl: publicBaseUrl(req.nextUrl.origin), defaultVoiceId: process.env.RETELL_VOICE_ID?.trim() || undefined });
+      const r = await syncVoiceAgent(db, getRetell(), sctx, { baseUrl: publicBaseUrl(req.nextUrl.origin), defaultVoiceId: process.env.RETELL_VOICE_ID?.trim() || undefined, economy: voiceCostSettings(process.env) });
       if (r.ok) await logSupportAction(db, sctx, "voice_sync");
       return respond(r);
     }
