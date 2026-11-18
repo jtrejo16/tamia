@@ -289,3 +289,104 @@ export async function calendarDueAppointments(db: Database, limit = 50): Promise
   const rows = await db.execute<{ tenant_id: string; appointment_id: string }>(sql`select * from calendar_due_appointments(${limit})`);
   return rows.map((r) => ({ tenantId: r.tenant_id, appointmentId: r.appointment_id }));
 }
+
+// ---------------------------------------------------------------- consola del operador (migracion 0019)
+
+export interface OperatorOverviewChannel {
+  type: string;
+  status: "active" | "paused" | "error";
+  hasToken: boolean;
+  quality: string | null;
+  account: string | null;
+}
+
+export interface OperatorOverviewRow {
+  id: string;
+  name: string;
+  slug: string;
+  vertical: string;
+  status: string;
+  plan: string;
+  createdAt: Date;
+  timezone: string;
+  ownerEmail: string | null;
+  ownerName: string | null;
+  members: number;
+  subStatus: string | null;
+  trialEndsAt: Date | null;
+  currentPeriodEnd: Date | null;
+  cardAuthorized: boolean;
+  hasCheckout: boolean;
+  reconciledAt: Date | null;
+  subUpdatedAt: Date | null;
+  channels: OperatorOverviewChannel[];
+  lastInboundAt: Date | null;
+  lastOutboundAt: Date | null;
+  inbound7d: number;
+  bot7d: number;
+  failed24h: number;
+  openHandoffs: number;
+  pendingApprovals: number;
+  appointmentsNext7d: number;
+  voiceEnabled: boolean;
+  voiceSynced: boolean;
+  calendarStatus: string | null;
+  templatesRejected: number;
+  templatesPending: number;
+}
+
+const dateOrNull = (v: unknown): Date | null => (v ? new Date(v as string | number | Date) : null);
+
+/** Resumen de todos los negocios para el operador (la base valida que el usuario sea operador). */
+export async function operatorOverviewRows(db: Database, userId: string): Promise<OperatorOverviewRow[]> {
+  return asOperator(db, userId, async (tx) => {
+    const rows = await tx.execute<Record<string, any>>(sql`select * from operator_overview()`);
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      vertical: r.vertical,
+      status: r.status,
+      plan: r.plan,
+      createdAt: new Date(r.created_at),
+      timezone: r.timezone,
+      ownerEmail: r.owner_email,
+      ownerName: r.owner_name,
+      members: Number(r.members),
+      subStatus: r.sub_status,
+      trialEndsAt: dateOrNull(r.trial_ends_at),
+      currentPeriodEnd: dateOrNull(r.current_period_end),
+      cardAuthorized: Boolean(r.card_authorized),
+      hasCheckout: Boolean(r.has_checkout),
+      reconciledAt: dateOrNull(r.reconciled_at),
+      subUpdatedAt: dateOrNull(r.sub_updated_at),
+      channels: ((r.channels ?? []) as Array<{ type: string; status: string; hasToken: boolean; quality: string | null; account: string | null }>).map((c) => ({
+        type: c.type,
+        status: c.status as OperatorOverviewChannel["status"],
+        hasToken: Boolean(c.hasToken),
+        quality: c.quality ?? null,
+        account: c.account ?? null,
+      })),
+      lastInboundAt: dateOrNull(r.last_inbound_at),
+      lastOutboundAt: dateOrNull(r.last_outbound_at),
+      inbound7d: Number(r.inbound_7d),
+      bot7d: Number(r.bot_7d),
+      failed24h: Number(r.failed_24h),
+      openHandoffs: Number(r.open_handoffs),
+      pendingApprovals: Number(r.pending_approvals),
+      appointmentsNext7d: Number(r.appointments_next_7d),
+      voiceEnabled: Boolean(r.voice_enabled),
+      voiceSynced: Boolean(r.voice_synced),
+      calendarStatus: r.calendar_status ?? null,
+      templatesRejected: Number(r.templates_rejected),
+      templatesPending: Number(r.templates_pending),
+    }));
+  });
+}
+
+export async function operatorExtendTrialRow(db: Database, userId: string, tenantId: string, days: number): Promise<boolean> {
+  return asOperator(db, userId, async (tx) => {
+    const rows = await tx.execute<{ ok: boolean }>(sql`select operator_extend_trial(${tenantId}, ${days}) as ok`);
+    return rows[0]?.ok === true;
+  });
+}

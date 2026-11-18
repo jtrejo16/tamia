@@ -10,7 +10,7 @@ import {
   type Database,
 } from "@empleado/db";
 import { assertPasswordStrength, hashPassword, verifyPassword, type SessionRole } from "@empleado/shared";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { randomInt, randomUUID } from "node:crypto";
 import { can, fail, type Failure, type PanelContext, type Success } from "./types";
 
@@ -57,6 +57,9 @@ export async function listMembers(db: Database, ctx: PanelContext): Promise<Memb
       })
       .from(memberships)
       .innerJoin(users, eq(users.id, memberships.userId))
+      // La politica de acceso tambien deja ver las membresias PROPIAS de la persona en otros negocios: sin este
+      // filtro, alguien con acceso a varios negocios (o el operador) veria su propia fila de otro negocio aqui.
+      .where(eq(memberships.tenantId, ctx.tenantId))
       .orderBy(asc(memberships.role), asc(users.email));
     return rows.map((r): MemberView => ({
       userId: r.userId,
@@ -102,7 +105,7 @@ export async function addMember(
   try {
     return await withTenant(db, scope(ctx), async (tx) => {
       if (existing) {
-        const [already] = await tx.select({ id: memberships.id }).from(memberships).where(eq(memberships.userId, existing.id));
+        const [already] = await tx.select({ id: memberships.id }).from(memberships).where(and(eq(memberships.userId, existing.id), eq(memberships.tenantId, ctx.tenantId)));
         if (already) return fail("already_member" as const);
       } else {
         // Sin RETURNING: la politica de lectura de users solo deja ver a quien ya es del negocio.
@@ -118,8 +121,9 @@ export async function addMember(
   }
 }
 
-async function ownerCount(tx: Parameters<Parameters<typeof withTenant>[2]>[0]): Promise<number> {
-  const [row] = await tx.select({ n: sql<number>`count(*)::int` }).from(memberships).where(eq(memberships.role, "owner"));
+/** Dueños de ESTE negocio (la politica de acceso tambien muestra las membresias propias de otros negocios: se filtra). */
+async function ownerCount(tx: Parameters<Parameters<typeof withTenant>[2]>[0], tenantId: string): Promise<number> {
+  const [row] = await tx.select({ n: sql<number>`count(*)::int` }).from(memberships).where(and(eq(memberships.role, "owner"), eq(memberships.tenantId, tenantId)));
   return Number(row?.n ?? 0);
 }
 
@@ -134,9 +138,9 @@ export async function changeRole(
   if (!ROLES.includes(role as SessionRole)) return { ...fail("invalid"), details: ["Rol no válido"] };
 
   return withTenant(db, scope(ctx), async (tx) => {
-    const [member] = await tx.select().from(memberships).where(eq(memberships.userId, userId));
+    const [member] = await tx.select().from(memberships).where(and(eq(memberships.userId, userId), eq(memberships.tenantId, ctx.tenantId)));
     if (!member) return fail("not_found" as const);
-    if (member.role === "owner" && role !== "owner" && (await ownerCount(tx)) <= 1) return fail("last_owner" as const);
+    if (member.role === "owner" && role !== "owner" && (await ownerCount(tx, ctx.tenantId)) <= 1) return fail("last_owner" as const);
     await tx.update(memberships).set({ role: role as SessionRole, updatedAt: new Date() }).where(eq(memberships.id, member.id));
     await tx.insert(auditLog).values(record(ctx, "role_changed", userId, { from: member.role, to: role }));
     return { ok: true as const, role: role as SessionRole };
@@ -147,9 +151,9 @@ export async function changeRole(
 export async function removeMember(db: Database, ctx: PanelContext, userId: string): Promise<Success | Fail> {
   if (!can(ctx.role, "manage_users")) return fail("forbidden");
   return withTenant(db, scope(ctx), async (tx) => {
-    const [member] = await tx.select().from(memberships).where(eq(memberships.userId, userId));
+    const [member] = await tx.select().from(memberships).where(and(eq(memberships.userId, userId), eq(memberships.tenantId, ctx.tenantId)));
     if (!member) return fail("not_found" as const);
-    if (member.role === "owner" && (await ownerCount(tx)) <= 1) return fail("last_owner" as const);
+    if (member.role === "owner" && (await ownerCount(tx, ctx.tenantId)) <= 1) return fail("last_owner" as const);
     await tx.delete(memberships).where(eq(memberships.id, member.id));
     await tx.insert(auditLog).values(record(ctx, "removed", userId, { role: member.role }));
     return { ok: true as const };

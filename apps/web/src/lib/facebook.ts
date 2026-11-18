@@ -72,3 +72,31 @@ export const pagesCookieOptions = {
   path: "/api/channel/facebook",
   maxAge: 600,
 };
+
+// ---------------------------------------------------------------- soporte del operador (conectar en nombre de un cliente)
+
+export const OP_STATE_PURPOSE = "fbop";
+export const OP_PAGES_COOKIE = "ed_fb_pages_op";
+export const opPagesCookieOptions = { ...pagesCookieOptions, path: "/api/operator/facebook" };
+
+/** State del operador: lleva el negocio al que se conecta. Se firma con otro "proposito" que el de un dueño. */
+export function makeOperatorState(operatorId: string, tenantId: string): string {
+  const data = b64(Buffer.from(JSON.stringify({ uid: operatorId, tid: tenantId, n: randomBytes(8).toString("hex"), exp: Date.now() + STATE_TTL_MS })));
+  return `${data}.${sign(data, OP_STATE_PURPOSE)}`;
+}
+
+/** Devuelve el negocio del state si la firma es valida, no vencio y lo creo ESTE operador; si no, null. */
+export function readOperatorState(state: string | null, operatorId: string): string | null {
+  if (!state) return null;
+  const [data, mac] = state.split(".");
+  if (!data || !mac) return null;
+  const a = Buffer.from(sign(data, OP_STATE_PURPOSE));
+  const b = Buffer.from(mac);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  try {
+    const p = JSON.parse(Buffer.from(data, "base64url").toString("utf8")) as { uid?: string; tid?: string; exp?: number };
+    return p.uid === operatorId && typeof p.tid === "string" && typeof p.exp === "number" && p.exp > Date.now() ? p.tid : null;
+  } catch {
+    return null;
+  }
+}

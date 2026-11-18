@@ -195,15 +195,16 @@ function Stacked({ parts }: { parts: Array<{ label: string; value: number; color
 
 // ---------------------------------------------------------------- pagina
 
-export function StatsView() {
+/** `tenantId`: el operador ve las estadisticas de un cliente. `embedded`: dentro de otra pantalla (sin su propio scroll). */
+export function StatsView({ tenantId, embedded }: { tenantId?: string; embedded?: boolean } = {}) {
   const [days, setDays] = useState(30);
-  const { data, error, loading } = usePolling<{ ok: true; stats: S }>(`/api/stats?days=${days}`, 60_000);
+  const { data, error, loading } = usePolling<{ ok: true; stats: S }>(`/api/stats?days=${days}${tenantId ? `&tenant=${tenantId}` : ""}`, 60_000);
   const s = data?.stats;
   // Al cambiar de rango se muestra el anterior mientras llega el nuevo (sin parpadeo).
   const stale = s && s.range.days !== days;
 
   return (
-    <div className="mx-auto h-full max-w-6xl space-y-4 overflow-y-auto p-4 sm:p-6">
+    <div className={cx("mx-auto max-w-6xl space-y-4", !embedded && "h-full overflow-y-auto p-4 sm:p-6")}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">Estadísticas</h1>

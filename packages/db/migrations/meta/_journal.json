@@ -134,6 +134,13 @@
       "when": 1794877506441,
       "tag": "0018_calendar_rls_and_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794995870907,
+      "tag": "0019_operator_console",
+      "breakpoints": true
     }
   ]
 }

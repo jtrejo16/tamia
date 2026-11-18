@@ -1,7 +1,7 @@
-import { fetchPagesForCode } from "@empleado/inbox";
+import { fetchPagesForCode, operatorSupportContext } from "@empleado/inbox";
 import { NextResponse, type NextRequest } from "next/server";
-import { PAGES_COOKIE, pagesCookieOptions, sealPages, socialDeps, verifyState } from "@/lib/facebook";
-import { publicBaseUrl } from "@/lib/server";
+import { OP_PAGES_COOKIE, PAGES_COOKIE, opPagesCookieOptions, pagesCookieOptions, readOperatorState, sealPages, socialDeps, verifyState } from "@/lib/facebook";
+import { getDb, publicBaseUrl } from "@/lib/server";
 import { getValidSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -15,9 +15,27 @@ export async function GET(req: NextRequest) {
   const valid = await getValidSession();
   if (!valid) return NextResponse.redirect(`${base}/login`);
   const deps = socialDeps();
-  if (!deps || valid.ctx.role !== "owner") return back("forbidden");
-
   const params = req.nextUrl.searchParams;
+
+  // Soporte: el operador conecta la pagina de un cliente. El state lleva el negocio y solo lo acepta quien lo creo.
+  const opTenant = readOperatorState(params.get("state"), valid.session.uid);
+  if (opTenant) {
+    const backOp = (code: string) => NextResponse.redirect(`${base}/operador/${opTenant}?fb=${code}`);
+    if (!deps || !(await operatorSupportContext(getDb(), valid.session.uid, opTenant))) return backOp("forbidden");
+    if (params.get("error")) return backOp("denied");
+    const code = params.get("code");
+    if (!code) return backOp("invalid");
+    const result = await fetchPagesForCode(deps, { code, redirectUri: `${base}/api/channel/facebook/callback` });
+    if (!result.ok) {
+      console.error(`[facebook] callback (soporte) fallo: ${result.error}${result.detail ? ` (${result.detail})` : ""}`);
+      return backOp(result.error);
+    }
+    const res = backOp("pick");
+    res.cookies.set(OP_PAGES_COOKIE, sealPages(valid.session.uid, opTenant, result.pages), opPagesCookieOptions);
+    return res;
+  }
+
+  if (!deps || valid.ctx.role !== "owner") return back("forbidden");
   if (params.get("error")) {
     console.error(`[facebook] Facebook devolvio error: ${params.get("error")} / ${params.get("error_description") ?? ""}`);
     return back("denied"); // el usuario cancelo

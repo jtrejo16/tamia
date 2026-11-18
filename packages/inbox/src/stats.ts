@@ -194,7 +194,7 @@ async function core(tx: Tx, tenantId: string, a: Date, b: Date): Promise<Core> {
           count(*) filter (where m.direction = 'out' and m.sender = 'bot')::int as bot,
           count(*) filter (where m.direction = 'out' and m.sender = 'human')::int as human,
           count(distinct m.conversation_id)::int as active
-        from messages m join channels c on c.id = m.channel_id and c.type <> 'voice'
+        from messages m join channels c on c.id = m.channel_id and c.type in ('whatsapp','messenger','instagram')
         where m.tenant_id = ${tenantId} and m.created_at >= ${iso(a)}::timestamptz and m.created_at < ${iso(b)}::timestamptz`,
   );
   const h = await one<{ c: number }>(tx, sql`select count(*)::int as c from handoffs where tenant_id = ${tenantId} and created_at >= ${iso(a)}::timestamptz and created_at < ${iso(b)}::timestamptz`);
@@ -235,7 +235,7 @@ export async function getStats(
             count(*) filter (where m.direction = 'out' and m.status in ('delivered','read'))::int as delivered,
             count(*) filter (where m.direction = 'out' and m.status = 'read')::int as read,
             count(*) filter (where m.direction = 'out' and m.status = 'failed')::int as failed
-          from messages m join channels c on c.id = m.channel_id and c.type <> 'voice'
+          from messages m join channels c on c.id = m.channel_id and c.type in ('whatsapp','messenger','instagram')
           where m.tenant_id = ${t} and m.created_at >= ${A}::timestamptz and m.created_at < ${B}::timestamptz`,
     );
     const byChannel = await rows<{ channel: string; inbound: number; outbound: number }>(
@@ -243,7 +243,7 @@ export async function getStats(
       sql`select c.type as channel,
             count(*) filter (where m.direction = 'in')::int as inbound,
             count(*) filter (where m.direction = 'out')::int as outbound
-          from messages m join channels c on c.id = m.channel_id and c.type <> 'voice'
+          from messages m join channels c on c.id = m.channel_id and c.type in ('whatsapp','messenger','instagram')
           where m.tenant_id = ${t} and m.created_at >= ${A}::timestamptz and m.created_at < ${B}::timestamptz
           group by c.type order by count(*) desc`,
     );
@@ -253,7 +253,7 @@ export async function getStats(
             count(*) filter (where m.direction = 'in')::int as inbound,
             count(*) filter (where m.direction = 'out' and m.sender = 'bot')::int as bot,
             count(*) filter (where m.direction = 'out' and m.sender = 'human')::int as human
-          from messages m join channels c on c.id = m.channel_id and c.type <> 'voice'
+          from messages m join channels c on c.id = m.channel_id and c.type in ('whatsapp','messenger','instagram')
           where m.tenant_id = ${t} and m.created_at >= ${A}::timestamptz and m.created_at < ${B}::timestamptz
           group by 1`,
     );
@@ -262,13 +262,13 @@ export async function getStats(
     const hourRows = await rows<{ k: number; c: number }>(
       tx,
       sql`select extract(hour from m.created_at at time zone ${tz})::int as k, count(*)::int as c
-          from messages m join channels c on c.id = m.channel_id and c.type <> 'voice'
+          from messages m join channels c on c.id = m.channel_id and c.type in ('whatsapp','messenger','instagram')
           where m.tenant_id = ${t} and m.direction = 'in' and m.created_at >= ${A}::timestamptz and m.created_at < ${B}::timestamptz group by 1`,
     );
     const wdRows = await rows<{ k: number; c: number }>(
       tx,
       sql`select extract(dow from m.created_at at time zone ${tz})::int as k, count(*)::int as c
-          from messages m join channels c on c.id = m.channel_id and c.type <> 'voice'
+          from messages m join channels c on c.id = m.channel_id and c.type in ('whatsapp','messenger','instagram')
           where m.tenant_id = ${t} and m.direction = 'in' and m.created_at >= ${A}::timestamptz and m.created_at < ${B}::timestamptz group by 1`,
     );
 
@@ -278,7 +278,7 @@ export async function getStats(
       sql`with ordered as (
             select m.id, m.conversation_id, m.direction, m.created_at,
               lag(m.direction) over (partition by m.conversation_id order by m.created_at, m.id) as prev_dir
-            from messages m join channels c on c.id = m.channel_id and c.type <> 'voice'
+            from messages m join channels c on c.id = m.channel_id and c.type in ('whatsapp','messenger','instagram')
             where m.tenant_id = ${t} and m.created_at >= ${A}::timestamptz and m.created_at < ${B}::timestamptz
           ), firsts as (select * from ordered where direction = 'in' and prev_dir is distinct from 'in'),
           timed as (
@@ -302,11 +302,11 @@ export async function getStats(
     const conv = await one<{ created: number; resolved: number; active: number }>(
       tx,
       sql`with act as (
-            select distinct m.conversation_id from messages m join channels c on c.id = m.channel_id and c.type <> 'voice'
+            select distinct m.conversation_id from messages m join channels c on c.id = m.channel_id and c.type in ('whatsapp','messenger','instagram')
             where m.tenant_id = ${t} and m.created_at >= ${A}::timestamptz and m.created_at < ${B}::timestamptz
           )
           select
-            (select count(*)::int from conversations cv join channels c on c.id = cv.channel_id and c.type <> 'voice'
+            (select count(*)::int from conversations cv join channels c on c.id = cv.channel_id and c.type in ('whatsapp','messenger','instagram')
               where cv.tenant_id = ${t} and cv.created_at >= ${A}::timestamptz and cv.created_at < ${B}::timestamptz) as created,
             (select count(*)::int from act) as active,
             (select count(*)::int from act a where
