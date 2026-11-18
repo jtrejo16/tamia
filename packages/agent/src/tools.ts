@@ -7,6 +7,7 @@ import {
   conversations,
   handoffs,
   knowledgeDocs,
+  messages,
   services,
   staff,
   staffServices,
@@ -27,7 +28,7 @@ import {
   type Slot,
   type TimeWindow,
 } from "@empleado/scheduling";
-import { and, asc, eq, gt, gte, inArray, isNull, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import {
   formatLocal,
@@ -293,7 +294,19 @@ const schemas = {
   buscar_conocimiento: z.object({ pregunta: z.string().trim().min(3).max(300) }),
   enviar_ubicacion: noArgs,
   escalar_a_humano: z.object({
-    motivo: z.string().trim().min(3).max(300),
+    motivo: z
+      .string()
+      .trim()
+      .min(3)
+      .max(300)
+      .describe("POR QUÉ escalas, concreto: qué no pudiste hacer o qué dato falta (p. ej. 'no hay servicios cargados', 'el cliente pidió hablar con una persona'). Nunca algo genérico."),
+    resumen: z
+      .string()
+      .trim()
+      .min(3)
+      .max(500)
+      .optional()
+      .describe("Contexto para la persona que tomará la conversación: qué quiere el cliente, qué datos ya dio y qué ya hiciste. 1 a 3 frases."),
     urgencia: z.enum(["normal", "alta"]).default("normal"),
   }),
 } as const;
@@ -754,46 +767,72 @@ export const TOOLS: ToolTable = {
       "Pasa la conversación a una persona del equipo y pausa al asistente. Úsala ante quejas, urgencias, descuentos, facturas, dudas que no puedas resolver con datos reales, o si el cliente lo pide.",
     mutating: false,
     async execute(args, ctx) {
-      const availability = humanAvailability(ctx.tenant.humanHours, ctx.now, ctx.tenant.timezone);
-      await withTenant(ctx.db, { tenantId: ctx.tenantId }, async (tx) => {
-        const open = await tx
-          .select({ id: handoffs.id })
-          .from(handoffs)
-          .where(and(eq(handoffs.conversationId, ctx.conversationId), isNull(handoffs.resolvedAt)));
-        if (open.length === 0) {
-          await tx.insert(handoffs).values({
-            tenantId: ctx.tenantId,
-            conversationId: ctx.conversationId,
-            reason: args.motivo,
-            urgency: args.urgencia,
-            notifiedAt: null, // lo toma el servicio de notificaciones (paso de bandeja)
-          });
-        }
-        await tx
-          .update(conversations)
-          .set({ state: "human", updatedAt: new Date() })
-          .where(eq(conversations.id, ctx.conversationId));
-      });
-      ctx.escalated = true;
-      const when = availability.openNow
-        ? "en breve"
-        : availability.nextOpenText
-          ? `${availability.nextOpenText}`
-          : "en cuanto sea posible";
-      ctx.escalationMessage = availability.openNow
-        ? "Le paso tu mensaje a la recepción y te contestan en breve."
-        : `Le paso tu mensaje a la recepción; te contestan ${when}.`;
-      return {
-        ok: true,
-        urgencia: args.urgencia,
-        persona_disponible_ahora: availability.openNow,
-        te_contestan: when,
-        mensaje_sugerido: ctx.escalationMessage,
-        instruccion: "Informa al cliente de forma honesta y breve; no sigas resolviendo el tema tú.",
-      };
+      return recordEscalation(ctx, { motivo: args.motivo, resumen: args.resumen, urgencia: args.urgencia, source: "assistant" });
     },
   },
 };
+
+/** Lo ultimo que escribio el cliente, para dar contexto cuando el asistente no redacto un resumen. */
+async function customerRecap(tx: Tx, conversationId: string): Promise<string | null> {
+  const rows = await tx
+    .select({ body: messages.body, transcript: messages.transcript })
+    .from(messages)
+    .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "in")))
+    .orderBy(desc(messages.createdAt))
+    .limit(4);
+  const said = rows
+    .reverse()
+    .map((m) => (m.transcript ?? m.body ?? "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .map((t) => `«${t.length > 140 ? `${t.slice(0, 137)}…` : t}»`);
+  return said.length > 0 ? `El cliente escribió: ${said.join(" · ")}`.slice(0, 500) : null;
+}
+
+/**
+ * Pasa la conversacion a una persona y deja constancia de POR QUE y de que quiere el cliente.
+ * `source = system` es una falla tecnica del asistente (no una decision suya): se marca para que nadie la confunda.
+ */
+export async function recordEscalation(
+  ctx: TurnContext,
+  input: { motivo: string; resumen?: string; urgencia: "normal" | "alta"; source: "assistant" | "system" },
+): Promise<ToolResult> {
+  const availability = humanAvailability(ctx.tenant.humanHours, ctx.now, ctx.tenant.timezone);
+  await withTenant(ctx.db, { tenantId: ctx.tenantId }, async (tx) => {
+    const open = await tx
+      .select({ id: handoffs.id })
+      .from(handoffs)
+      .where(and(eq(handoffs.conversationId, ctx.conversationId), isNull(handoffs.resolvedAt)));
+    if (open.length === 0) {
+      const summary = input.resumen?.trim() || (await customerRecap(tx, ctx.conversationId));
+      await tx.insert(handoffs).values({
+        tenantId: ctx.tenantId,
+        conversationId: ctx.conversationId,
+        reason: input.motivo,
+        summary,
+        source: input.source,
+        urgency: input.urgencia,
+        notifiedAt: null, // lo toma el servicio de notificaciones (paso de bandeja)
+      });
+    }
+    await tx
+      .update(conversations)
+      .set({ state: "human", updatedAt: new Date() })
+      .where(eq(conversations.id, ctx.conversationId));
+  });
+  ctx.escalated = true;
+  const when = availability.openNow ? "en breve" : availability.nextOpenText ? `${availability.nextOpenText}` : "en cuanto sea posible";
+  ctx.escalationMessage = availability.openNow
+    ? "Le paso tu mensaje a la recepción y te contestan en breve."
+    : `Le paso tu mensaje a la recepción; te contestan ${when}.`;
+  return {
+    ok: true,
+    urgencia: input.urgencia,
+    persona_disponible_ahora: availability.openNow,
+    te_contestan: when,
+    mensaje_sugerido: ctx.escalationMessage,
+    instruccion: "Informa al cliente de forma honesta y breve; no sigas resolviendo el tema tú.",
+  };
+}
 
 // -------------------------------------------------------- apoyo de las citas
 

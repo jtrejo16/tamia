@@ -306,10 +306,21 @@ function ConversationPane({ id, onBack }: { id: string; onBack: () => void }) {
       {(c.handoff || c.approvals.length > 0) && (
         <div className="space-y-2 border-b border-slate-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
           {c.handoff && (
-            <p>
-              <strong>{c.handoff.urgency === "alta" ? "Urgente: " : "Escalada: "}</strong>
-              {c.handoff.reason}
-            </p>
+            <div className="space-y-1">
+              <p>
+                <strong>{c.handoff.urgency === "alta" ? "Urgente: " : "Escalada: "}</strong>
+                {c.handoff.reason}
+              </p>
+              {c.handoff.summary && (
+                <p>
+                  <strong>Qué quiere el cliente: </strong>
+                  {c.handoff.summary}
+                </p>
+              )}
+              {c.handoff.source === "system" && (
+                <p className="text-xs font-medium text-rose-800">Esto fue una falla del asistente, no una decisión suya: el cliente no recibió una respuesta real.</p>
+              )}
+            </div>
           )}
           {c.approvals.length > 0 && (
             <p>

@@ -26,7 +26,7 @@ import { MAX_RAW_HISTORY, maybeSummarize, messageText } from "./memory";
 import { GENERIC_PACK, loadPack, type Pack } from "./pack";
 import { decideOutput, modeFor, type Autonomy } from "./policy";
 import { buildSystemPrompt } from "./prompt";
-import { runTool, toolDefinitions, TOOLS, upcomingAppointments, type ToolRun } from "./tools";
+import { recordEscalation, runTool, toolDefinitions, upcomingAppointments, type ToolRun } from "./tools";
 import type { Attachment, TaskState, TurnContext } from "./types";
 
 const MAX_REPLY_CHARS = 3800;
@@ -319,16 +319,18 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
     }
     if (!finished) {
       failure = "limite_de_iteraciones";
-      await forceEscalation(ctx, "El asistente no logró resolver la solicitud");
+      await forceEscalation(ctx, "Falla del asistente (no fue su decisión): dio demasiadas vueltas con sus herramientas y no logró resolver la solicitud. Revisa que el negocio tenga servicios, horarios y especialistas cargados.");
     } else if (!finalText && !ctx.escalated) {
       failure = "respuesta_vacia";
-      await forceEscalation(ctx, "El asistente no generó una respuesta");
+      await forceEscalation(ctx, "Falla del asistente (no fue su decisión): el modelo de IA no generó ninguna respuesta.");
     }
   } catch (error) {
     failure = error instanceof LLMError ? `llm_${error.status ?? "red"}` : "error_inesperado";
     console.error("[agent] fallo el turno:", error instanceof Error ? error.message : error);
     try {
-      await forceEscalation(ctx, "Error técnico al procesar el mensaje");
+      const hint =
+        failure === "llm_429" ? "el modelo de IA está saturado o llegó al límite de uso (modo gratuito)" : failure.startsWith("llm_") ? `el modelo de IA no respondió (${failure})` : "error inesperado en el servidor";
+      await forceEscalation(ctx, `Falla técnica del asistente (no fue su decisión): ${hint}. Código: ${failure}.`);
     } catch (e) {
       console.error("[agent] tampoco se pudo escalar:", e instanceof Error ? e.message : e);
     }
@@ -424,6 +426,7 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
   };
 }
 
+/** Falla tecnica: el asistente NO decidio escalar. Se marca como "system" para que quien lo reciba lo sepa. */
 async function forceEscalation(ctx: TurnContext, reason: string): Promise<void> {
-  await TOOLS.escalar_a_humano.execute({ motivo: reason, urgencia: "normal" }, ctx);
+  await recordEscalation(ctx, { motivo: reason, urgencia: "normal", source: "system" });
 }

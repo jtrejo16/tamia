@@ -122,7 +122,7 @@ describe("bandeja", () => {
 
     await dbs.owner.db.insert(handoffs).values({ tenantId: w.tenantId, conversationId: w.conversationId, reason: "Dolor fuerte", urgency: "alta" });
     const [escalated] = await listConversations(dbs.app.db, w.owner, { now: NOW });
-    expect(escalated!.handoff).toEqual({ urgency: "alta", reason: "Dolor fuerte" });
+    expect(escalated!.handoff).toEqual({ urgency: "alta", reason: "Dolor fuerte", summary: null, source: "assistant" });
   });
 
   it("busca por nombre, apodo o telefono", async () => {

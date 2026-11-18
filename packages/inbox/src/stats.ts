@@ -69,7 +69,7 @@ export interface StatsView {
     urgentHandoffs: number;
     openHandoffs: number;
     medianHandoffResolutionMinutes: number | null;
-    recentReasons: Array<{ reason: string; urgency: string; at: string }>;
+    recentReasons: Array<{ reason: string; summary: string | null; source: "assistant" | "system"; urgency: string; at: string }>;
     /** Escalaciones tomadas por cada persona del equipo. */
     takenByPerson: Array<{ name: string; count: number }>;
   };
@@ -323,9 +323,9 @@ export async function getStats(
               filter (where resolved_at is not null and created_at >= ${A}::timestamptz and created_at < ${B}::timestamptz) as med_min
           from handoffs where tenant_id = ${t}`,
     );
-    const reasons = await rows<{ reason: string; urgency: string; at: Date }>(
+    const reasons = await rows<{ reason: string; summary: string | null; source: string; urgency: string; at: Date }>(
       tx,
-      sql`select reason, urgency, created_at as at from handoffs where tenant_id = ${t} and created_at >= ${A}::timestamptz and created_at < ${B}::timestamptz order by created_at desc limit 5`,
+      sql`select reason, summary, source, urgency, created_at as at from handoffs where tenant_id = ${t} and created_at >= ${A}::timestamptz and created_at < ${B}::timestamptz order by created_at desc limit 5`,
     );
     const takers = await rows<{ name: string | null; c: number }>(
       tx,
@@ -518,7 +518,7 @@ export async function getStats(
         urgentHandoffs: n(ho.urgent),
         openHandoffs: n(ho.open),
         medianHandoffResolutionMinutes: nOrNull(ho.med_min),
-        recentReasons: reasons.map((r) => ({ reason: r.reason, urgency: r.urgency, at: new Date(r.at).toISOString() })),
+        recentReasons: reasons.map((r) => ({ reason: r.reason, summary: r.summary, source: r.source === "system" ? ("system" as const) : ("assistant" as const), urgency: r.urgency, at: new Date(r.at).toISOString() })),
         takenByPerson: takers.map((r) => ({ name: r.name ?? "Persona", count: n(r.c) })),
       },
       approvals: {

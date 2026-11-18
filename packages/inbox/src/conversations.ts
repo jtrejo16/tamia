@@ -50,7 +50,8 @@ export interface ConversationSummary {
   preview: string;
   previewFromCustomer: boolean;
   pendingApprovals: number;
-  handoff: { urgency: string; reason: string } | null;
+  /** Por que se escalo, que quiere el cliente y si fue decision del asistente o una falla tecnica (source = system). */
+  handoff: { urgency: string; reason: string; summary: string | null; source: "assistant" | "system" } | null;
   /** Pide que una persona haga algo ya (escalada, borrador por aprobar o cliente esperando). */
   needsAttention: boolean;
 }
@@ -160,7 +161,7 @@ async function summarize(tx: Tx, rows: Row[], now: Date): Promise<ConversationSu
         : "",
       previewFromCustomer: lm?.direction === "in",
       pendingApprovals,
-      handoff: handoff ? { urgency: handoff.urgency, reason: handoff.reason } : null,
+      handoff: handoff ? { urgency: handoff.urgency, reason: handoff.reason, summary: handoff.summary, source: handoff.source === "system" ? "system" : "assistant" } : null,
       needsAttention: c.state !== "closed" && (Boolean(handoff) || pendingApprovals > 0 || customerWaiting),
     };
   });

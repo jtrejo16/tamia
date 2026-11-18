@@ -327,7 +327,8 @@ export function StatsView({ tenantId, embedded }: { tenantId?: string; embedded?
                 <ul className="space-y-2 text-sm">
                   {s.conversations.recentReasons.map((r, i) => (
                     <li key={i} className="rounded-lg bg-slate-50 p-2">
-                      <p className="text-slate-800">{r.reason}</p>
+                      <p className="text-slate-800">{r.source === "system" && <span className="mr-1 rounded bg-rose-100 px-1.5 py-0.5 text-[11px] font-medium text-rose-800">Falla técnica</span>}{r.reason}</p>
+                      {r.summary && <p className="mt-0.5 text-xs text-slate-500">{r.summary}</p>}
                       <p className="mt-0.5 text-[11px] text-slate-400">{r.urgency === "alta" ? "Urgente · " : ""}{new Date(r.at).toLocaleDateString("es-MX", { timeZone: s.range.timezone, day: "numeric", month: "short" })}</p>
                     </li>
                   ))}

@@ -320,9 +320,32 @@ describe("escalamiento y robustez", () => {
     expect(r.failure).toBe("llm_503");
     expect(r.escalated).toBe(true);
     expect(r.text).toContain("recepción");
-    expect(
-      await dbs.owner.db.select().from(handoffs).where(eq(handoffs.conversationId, w.conversationId)),
-    ).toHaveLength(1);
+    const hand = await dbs.owner.db.select().from(handoffs).where(eq(handoffs.conversationId, w.conversationId));
+    expect(hand).toHaveLength(1);
+    // Una falla tecnica se marca como tal, dice la causa y trae lo que pidio el cliente.
+    expect(hand[0]).toMatchObject({ source: "system" });
+    expect(hand[0]!.reason).toMatch(/no fue su decisión.*llm_503/);
+    expect(hand[0]!.summary).toContain("hola");
+  });
+
+  it("al escalar por decision propia guarda el resumen del asistente (o, si falta, lo que escribio el cliente)", async () => {
+    const w = await world();
+    const a = await turn(
+      w,
+      new FakeLLM([
+        { tools: [{ name: "escalar_a_humano", args: { motivo: "No hay servicios cargados", resumen: "Quiere una limpieza dental el viernes por la tarde" } }] },
+        { text: "Le paso tu mensaje a la recepción." },
+      ]),
+      "quiero agendar una cita",
+    );
+    expect(a.escalated).toBe(true);
+    let [h] = await dbs.owner.db.select().from(handoffs).where(eq(handoffs.conversationId, w.conversationId));
+    expect(h).toMatchObject({ source: "assistant", reason: "No hay servicios cargados", summary: "Quiere una limpieza dental el viernes por la tarde" });
+
+    const w2 = await world();
+    await turn(w2, new FakeLLM([{ tools: [{ name: "escalar_a_humano", args: { motivo: "Duda sin respuesta" } }] }, { text: "ok" }]), "quiero una cita para mañana");
+    [h] = await dbs.owner.db.select().from(handoffs).where(eq(handoffs.conversationId, w2.conversationId));
+    expect(h!.summary).toContain("quiero una cita para mañana");
   });
 
   it("un error permanente del proveedor (llave invalida) tambien escala en lugar de callar", async () => {

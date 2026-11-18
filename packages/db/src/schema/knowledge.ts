@@ -100,6 +100,10 @@ export const handoffs = pgTable("handoffs", {
     .references(() => conversations.id, { onDelete: "cascade" }),
   reason: text("reason").notNull(),
   urgency: text("urgency").notNull().default("normal"), // normal | alta
+  /** Que quiere el cliente y que se hizo ya: contexto para quien toma la conversacion. */
+  summary: text("summary"),
+  /** assistant = el asistente decidio escalar; system = fallo tecnico del asistente (no decidio nada). */
+  source: text("source").notNull().default("assistant"),
   notifiedAt: timestamp("notified_at", { withTimezone: true }),
   takenBy: uuid("taken_by").references(() => users.id, { onDelete: "set null" }),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
