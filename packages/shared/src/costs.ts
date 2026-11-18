@@ -1,12 +1,19 @@
 /**
  * Costos de operar la plataforma, en dolares (USD). Lo que se puede MEDIR se mide (IA: costo real de OpenRouter;
- * llamadas: costo real que reporta Retell). Lo que no (mensajes de WhatsApp de Meta, telefonia) se ESTIMA con
- * tarifas editables: Meta y los proveedores cambian precios, asi que se pueden ajustar con la variable COST_RATES.
+ * llamadas: costo real que reporta Retell; WhatsApp: Meta avisa por mensaje si se cobra y en que categoria). Lo que
+ * no (el MONTO por mensaje de Meta, la telefonia) se ESTIMA con tarifas editables con la variable COST_RATES.
+ *
+ * Meta (desde el 1-oct-2026): cobra por mensaje ENTREGADO de la empresa al cliente, segun categoria: marketing,
+ * utilidad, autenticacion y SERVICIO (cualquier respuesta no-plantilla dentro de las 24 h, la IA incluida). Los primeros
+ * 1,000 mensajes de servicio al mes por numero son gratis; despues se cobran a la tarifa de utilidad/autenticacion.
+ * Los mensajes del cliente al negocio no se cobran. Ver docs/PRICING.md.
  */
 
 export interface CostRates {
-  /** Cargo de Meta por plantilla enviada (USD), segun categoria. Los mensajes de servicio (respuestas dentro de 24 h) no cuestan. */
-  whatsapp: { marketing: number; utility: number; authentication: number };
+  /** Cargo de Meta por mensaje entregado (USD), segun categoria. `service` = respuestas dentro de las 24 h. */
+  whatsapp: { marketing: number; utility: number; authentication: number; service: number };
+  /** Mensajes de servicio gratis al mes por numero de WhatsApp. */
+  serviceFreePerMonth: number;
   /** Telefonia (troncal SIP / DIDWW) por minuto de llamada (USD), solo cuando Retell no reporta su propio costo. */
   phonePerMinute: number;
   /** Costo por minuto de Retell si no reporto el costo de una llamada (USD). */
@@ -27,9 +34,14 @@ export interface CostConfig {
   usdMxn: number;
 }
 
-/** Tarifas por defecto (Mexico). SON ESTIMACIONES: revisa la tabla de precios de Meta y ajusta con COST_RATES. */
+/**
+ * Tarifas por defecto (Mexico). SON ESTIMACIONES, no la tabla de Meta: descarga la de Mexico (USD) en
+ * developers.facebook.com/documentation/business-messaging/whatsapp/pricing y ajusta con COST_RATES.
+ * Meta cobra el servicio a la misma tarifa que utilidad/autenticacion.
+ */
 export const DEFAULT_RATES: CostRates = {
-  whatsapp: { marketing: 0.0436, utility: 0.0085, authentication: 0.0085 },
+  whatsapp: { marketing: 0.0436, utility: 0.0085, authentication: 0.0085, service: 0.0085 },
+  serviceFreePerMonth: 1000,
   phonePerMinute: 0.015,
   retellFallbackPerMinute: 0.09,
 };
@@ -38,10 +50,10 @@ const num = (v: unknown): number | undefined => (typeof v === "number" && Number
 
 /**
  * Lee la configuracion de costos del entorno:
- *  - COST_RATES: JSON parcial, p. ej. {"whatsapp":{"marketing":0.05},"phonePerMinute":0.02}
+ *  - COST_RATES: JSON parcial, p. ej. {"whatsapp":{"marketing":0.05,"service":0.01},"phonePerMinute":0.02}
  *  - COST_FIXED_MONTHLY_USD: JSON {"Railway":20,"Numero DIDWW":3}
  *  - USD_MXN: tipo de cambio (por defecto 18)
- * Un valor mal escrito se ignora (nunca rompe la pantalla).
+ * Un valor mal escrito se ignora (nunca rompe la pantalla). Si no pones `service`, se usa la tarifa de utilidad.
  */
 export function costConfigFromEnv(env: Record<string, string | undefined>): CostConfig {
   const rates: CostRates = { ...DEFAULT_RATES, whatsapp: { ...DEFAULT_RATES.whatsapp } };
@@ -51,6 +63,8 @@ export function costConfigFromEnv(env: Record<string, string | undefined>): Cost
     rates.whatsapp.marketing = num(wa.marketing) ?? rates.whatsapp.marketing;
     rates.whatsapp.utility = num(wa.utility) ?? rates.whatsapp.utility;
     rates.whatsapp.authentication = num(wa.authentication) ?? rates.whatsapp.authentication;
+    rates.whatsapp.service = num(wa.service) ?? num(wa.utility) ?? rates.whatsapp.service;
+    rates.serviceFreePerMonth = num(raw.serviceFreePerMonth) ?? rates.serviceFreePerMonth;
     rates.phonePerMinute = num(raw.phonePerMinute) ?? rates.phonePerMinute;
     rates.retellFallbackPerMinute = num(raw.retellFallbackPerMinute) ?? rates.retellFallbackPerMinute;
   } catch {
@@ -80,11 +94,22 @@ export interface TenantUsage {
   callRecordedMicros: number;
   /** Segundos de llamadas SIN costo reportado (se estiman). */
   callUnpricedSeconds: number;
+  /** Plantillas SIN dato de Meta aun (estimado por la categoria de la plantilla). */
   tplMarketing: number;
   tplUtility: number;
   tplAuthentication: number;
   /** Plantillas cuyo nombre no se encontro (se cobran como utilidad). */
   tplUnknown: number;
+  /** Respuestas (no plantilla) SIN dato de Meta aun: se estiman como mensajes de servicio. */
+  svcLegacy: number;
+  /** Mensajes con dato de Meta que SI se cobran, por categoria (conteo real). */
+  billedMarketing: number;
+  billedUtility: number;
+  billedAuthentication: number;
+  billedService: number;
+  billedOther: number;
+  /** Mensajes de servicio gratis que aplican a este periodo (1,000 por mes por numero; proporcional si el periodo no es un mes). */
+  svcFreeTier: number;
 }
 
 export interface TenantCost {
@@ -93,7 +118,7 @@ export interface TenantCost {
   voiceUsd: number;
   /** Telefonia (troncal) por minuto. */
   phoneUsd: number;
-  /** Cargo estimado de Meta por plantillas. */
+  /** Cargo de Meta por mensajes (plantillas y respuestas de servicio). */
   whatsappUsd: number;
   totalUsd: number;
   /** Parte del total que es estimada (no medida). */
@@ -103,12 +128,21 @@ export interface TenantCost {
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
 export function priceTenant(u: TenantUsage, rates: CostRates): TenantCost {
+  const wa = rates.whatsapp;
   const aiUsd = u.aiMicros / 1e6;
   const voiceReal = u.callRecordedMicros / 1e6;
   const voiceEst = (u.callUnpricedSeconds / 60) * rates.retellFallbackPerMinute;
   const phoneUsd = (u.callSeconds / 60) * rates.phonePerMinute;
-  const whatsappUsd =
-    u.tplMarketing * rates.whatsapp.marketing + (u.tplUtility + u.tplUnknown) * rates.whatsapp.utility + u.tplAuthentication * rates.whatsapp.authentication;
+
+  // Mensajes con dato de Meta: se sabe CUALES se cobran (conteo real); solo el monto sale de la tarifa.
+  const billed =
+    u.billedMarketing * wa.marketing + u.billedUtility * wa.utility + u.billedAuthentication * wa.authentication + (u.billedService + u.billedOther) * wa.service;
+  // Mensajes sin dato de Meta (anteriores a este registro o aun sin aviso): plantillas por su categoria y respuestas
+  // como servicio, pasados los gratis del mes.
+  const templatesEst = u.tplMarketing * wa.marketing + (u.tplUtility + u.tplUnknown) * wa.utility + u.tplAuthentication * wa.authentication;
+  const serviceEst = Math.max(0, u.svcLegacy - Math.max(0, u.svcFreeTier - u.billedService)) * wa.service;
+  const whatsappUsd = billed + templatesEst + serviceEst;
+
   const voiceUsd = voiceReal + voiceEst;
   return {
     aiUsd: round6(aiUsd),
@@ -116,6 +150,7 @@ export function priceTenant(u: TenantUsage, rates: CostRates): TenantCost {
     phoneUsd: round6(phoneUsd),
     whatsappUsd: round6(whatsappUsd),
     totalUsd: round6(aiUsd + voiceUsd + phoneUsd + whatsappUsd),
+    // El monto de Meta siempre es estimado (la tarifa la pones tu), aunque el conteo sea real.
     estimatedUsd: round6(voiceEst + phoneUsd + whatsappUsd),
   };
 }

@@ -69,7 +69,10 @@ export interface CostTotals {
   /** Ingreso - costo variable - costos fijos. */
   profitUsd: number;
   callMinutes: number;
+  /** Plantillas enviadas (marketing, utilidad, autenticacion). */
   tplSent: number;
+  /** Respuestas dentro de las 24 h (mensajes de servicio de Meta), cobrables pasados los gratis del mes. */
+  serviceMsgs: number;
 }
 
 export interface CostReport {
@@ -80,7 +83,18 @@ export interface CostReport {
   fixed: Array<{ name: string; usd: number }>;
 }
 
-const toUsage = (r: OperatorCostRow): ClientCost["usage"] => ({
+const EMPTY = (tenantId: string): OperatorCostRow => ({
+  tenantId, aiMicros: 0, aiTokensIn: 0, aiTokensOut: 0, callCount: 0, callSeconds: 0, callRecordedMicros: 0, callUnpricedSeconds: 0,
+  tplMarketing: 0, tplUtility: 0, tplAuthentication: 0, tplUnknown: 0, svcLegacy: 0,
+  billedMarketing: 0, billedUtility: 0, billedAuthentication: 0, billedService: 0, billedOther: 0, waIn: 0, waOut: 0,
+});
+
+/** Mensajes de servicio gratis del periodo: 1,000 por mes por numero; proporcional si el periodo no es un mes calendario. */
+function freeTierFor(period: CostPeriod, days: number, perMonth: number): number {
+  return period === "month" || period === "last_month" ? perMonth : Math.round((perMonth * days) / 30);
+}
+
+const toUsage = (r: OperatorCostRow, svcFreeTier: number): ClientCost["usage"] => ({
   aiMicros: r.aiMicros,
   callSeconds: r.callSeconds,
   callRecordedMicros: r.callRecordedMicros,
@@ -89,6 +103,13 @@ const toUsage = (r: OperatorCostRow): ClientCost["usage"] => ({
   tplUtility: r.tplUtility,
   tplAuthentication: r.tplAuthentication,
   tplUnknown: r.tplUnknown,
+  svcLegacy: r.svcLegacy,
+  billedMarketing: r.billedMarketing,
+  billedUtility: r.billedUtility,
+  billedAuthentication: r.billedAuthentication,
+  billedService: r.billedService,
+  billedOther: r.billedOther,
+  svcFreeTier,
   aiTokensIn: r.aiTokensIn,
   aiTokensOut: r.aiTokensOut,
   callCount: r.callCount,
@@ -108,7 +129,7 @@ export function buildCostReport(
   const byTenant = new Map(usage.map((u) => [u.tenantId, u]));
   const rows: ClientCost[] = clients.map((c) => {
     const u = byTenant.get(c.id);
-    const use = u ? toUsage(u) : toUsage({ tenantId: c.id, aiMicros: 0, aiTokensIn: 0, aiTokensOut: 0, callCount: 0, callSeconds: 0, callRecordedMicros: 0, callUnpricedSeconds: 0, tplMarketing: 0, tplUtility: 0, tplAuthentication: 0, tplUnknown: 0, waIn: 0, waOut: 0 });
+    const use = toUsage(u ?? EMPTY(c.id), freeTierFor(period, range.days, config.rates.serviceFreePerMonth));
     const cost = priceTenant(use, config.rates);
     const revenueUsd = (c.mrrMxn / config.usdMxn) * (range.days / 30);
     return { tenantId: c.id, name: c.name, plan: c.plan, status: c.status, bucket: c.bucket, usage: use, cost, revenueUsd, marginUsd: revenueUsd - cost.totalUsd };
@@ -137,7 +158,8 @@ export function buildCostReport(
       revenueUsd,
       profitUsd: revenueUsd - variableUsd - fixedUsd,
       callMinutes: sum((r) => r.usage.callSeconds) / 60,
-      tplSent: sum((r) => r.usage.tplMarketing + r.usage.tplUtility + r.usage.tplAuthentication + r.usage.tplUnknown),
+      tplSent: sum((r) => r.usage.tplMarketing + r.usage.tplUtility + r.usage.tplAuthentication + r.usage.tplUnknown + r.usage.billedMarketing + r.usage.billedUtility + r.usage.billedAuthentication),
+      serviceMsgs: sum((r) => r.usage.svcLegacy + r.usage.billedService + r.usage.billedOther),
     },
   };
 }

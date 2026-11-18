@@ -137,6 +137,25 @@ describe("lectura del payload de Meta", () => {
     expect(parsed.ignored).toBe(1);
   });
 
+  it("lee como cobra Meta cada mensaje (categoria y si se cobra)", () => {
+    const parsed = parseWebhookPayload(
+      envelope({
+        statuses: [
+          { id: "w1", status: "sent", pricing: { billable: true, pricing_model: "PMP", type: "regular", category: "service" } },
+          { id: "w2", status: "delivered", pricing: { billable: false, pricing_model: "PMP", type: "free_customer_service", category: "service" } },
+          { id: "w3", status: "sent", pricing: { billable: "si", category: "utility" } }, // dato mal formado: se ignora
+          { id: "w4", status: "sent" },
+        ],
+      }),
+    );
+    expect(parsed.statuses.map((s) => s.status.pricing)).toEqual([
+      { billable: true, category: "service", type: "regular" },
+      { billable: false, category: "service", type: "free_customer_service" },
+      undefined,
+      undefined,
+    ]);
+  });
+
   it("tolera basura sin lanzar excepciones", () => {
     for (const junk of [null, 5, "x", [], {}, { object: "page" }, { object: "whatsapp_business_account", entry: "no" }, envelope({ messages: "no" })]) {
       expect(() => parseWebhookPayload(junk)).not.toThrow();

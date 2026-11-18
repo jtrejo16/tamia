@@ -32,6 +32,11 @@ export interface StatusEvent {
   errorCode?: number;
   errorTitle?: string;
   errorMessage?: string;
+  /**
+   * Como cobra Meta este mensaje (viene en los avisos "sent"/"delivered"): `billable` = se cobra, `category` =
+   * marketing | utility | authentication | service | ... (el monto sale de la tabla de tarifas de Meta).
+   */
+  pricing?: { billable: boolean; category: string; type?: string };
 }
 
 export interface ParsedWebhook {

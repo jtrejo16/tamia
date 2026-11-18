@@ -49,7 +49,7 @@ export function OperatorCostsView() {
     { label: "IA (OpenRouter)", v: t.aiUsd, note: "real" },
     { label: "Llamadas (Retell)", v: t.voiceUsd, note: "real; estimado si Retell no lo reportó" },
     { label: "Telefonía (troncal)", v: t.phoneUsd, note: "estimado por minuto" },
-    { label: "WhatsApp (Meta)", v: t.whatsappUsd, note: "estimado por plantilla enviada" },
+    { label: "WhatsApp (Meta)", v: t.whatsappUsd, note: "conteo según Meta; monto con tu tarifa" },
     { label: "Costos fijos", v: t.fixedUsd, note: r.fixed.length ? r.fixed.map((f) => f.name).join(", ") : "sin configurar" },
   ];
   const max = Math.max(...parts.map((p) => p.v), 0.0001);
@@ -91,7 +91,7 @@ export function OperatorCostsView() {
             </li>
           ))}
         </ul>
-        <p className="mt-3 text-xs text-slate-500">{Math.round(t.callMinutes)} min de llamadas · {t.tplSent} plantillas de WhatsApp enviadas (las respuestas dentro de 24 h no las cobra Meta).</p>
+        <p className="mt-3 text-xs text-slate-500">{Math.round(t.callMinutes)} min de llamadas · {t.tplSent} plantillas de WhatsApp · {t.serviceMsgs} respuestas dentro de 24 h (Meta cobra las de servicio pasadas las primeras {r.config.rates.serviceFreePerMonth.toLocaleString("es-MX")} al mes por número).</p>
       </section>
 
       <div className="flex items-center justify-between">
@@ -142,7 +142,8 @@ export function OperatorCostsView() {
         <ul className="mt-1 list-disc space-y-0.5 pl-5">
           <li><b>IA</b>: costo real que reporta OpenRouter por cada respuesta.</li>
           <li><b>Llamadas</b>: costo real que reporta Retell al terminar cada llamada (solo las llamadas nuevas lo traen; las anteriores se estiman a ${r.config.rates.retellFallbackPerMinute}/min).</li>
-          <li><b>Telefonía</b>: estimada a ${r.config.rates.phonePerMinute}/min. <b>WhatsApp</b>: estimado por plantilla enviada (marketing ${r.config.rates.whatsapp.marketing} · utilidad ${r.config.rates.whatsapp.utility} · autenticación ${r.config.rates.whatsapp.authentication}). Ajusta con la variable <code>COST_RATES</code> según tu factura.</li>
+          <li><b>Telefonía</b>: estimada a ${r.config.rates.phonePerMinute}/min.</li>
+          <li><b>WhatsApp (Meta)</b>: desde el 1 de octubre de 2026 Meta cobra por mensaje entregado de la empresa al cliente, también las respuestas del asistente dentro de las 24 h («servicio»), pasados los primeros {r.config.rates.serviceFreePerMonth.toLocaleString("es-MX")} al mes por número. Los mensajes nuevos traen de Meta si se cobran y su categoría (conteo real); los anteriores se estiman. El <b>monto</b> sale de tu tarifa (marketing ${r.config.rates.whatsapp.marketing} · utilidad ${r.config.rates.whatsapp.utility} · autenticación ${r.config.rates.whatsapp.authentication} · servicio ${r.config.rates.whatsapp.service}): ajústala con <code>COST_RATES</code> usando la tabla de México de Meta.</li>
           <li><b>Costos fijos</b> (Railway, número telefónico, dominio…): defínelos con <code>COST_FIXED_MONTHLY_USD</code>, p. ej. <code>{`{"Railway":20,"Número DIDWW":3}`}</code>. Hoy: {r.fixed.length ? r.fixed.map((f) => f.name).join(", ") : "ninguno configurado"}.</li>
           <li>El ingreso es el precio de lista de los que pagan (sin comisión de Mercado Pago ni IVA).</li>
         </ul>

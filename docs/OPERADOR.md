@@ -16,13 +16,13 @@ Cuánto cuesta atender a cada cliente y a toda la plataforma, por periodo (este 
 | IA (OpenRouter) | **Real**: costo que reporta OpenRouter en cada respuesta |
 | Llamadas (Retell) | **Real**: `call_cost` que Retell envía al terminar cada llamada. Las llamadas anteriores a este cambio (o sin costo) se estiman con `retellFallbackPerMinute` |
 | Telefonía (DIDWW/troncal) | **Estimado**: minutos de llamada × `phonePerMinute` |
-| WhatsApp (Meta) | **Estimado**: plantillas enviadas × tarifa de su categoría (marketing / utilidad / autenticación). Las respuestas dentro de las 24 h no las cobra Meta |
+| WhatsApp (Meta) | **Conteo real, monto estimado.** Meta avisa en cada mensaje si se cobra y su categoría (marketing / utilidad / autenticación / **servicio**); se guarda y se cuenta. El monto sale de tu tarifa. Los mensajes anteriores a este registro se estiman (plantillas por categoría; respuestas como servicio). **Desde el 1-oct-2026 Meta cobra también las respuestas dentro de las 24 h («servicio», la IA incluida), pasadas las primeras 1,000 al mes por número.** Detalle y fuentes en [PRICING.md](PRICING.md), [non-template-messages.md](non-template-messages.md) y [ai-providers.md](ai-providers.md) |
 | Costos fijos | Los defines tú (servidor, número telefónico, dominio…) y se reparten por los días del periodo |
 
 Por cliente se ve costo por concepto, ingreso (precio de lista si paga, prorrateado), y **margen**; un cliente en prueba o de cortesía sale en negativo: es lo que cuesta atenderlo. Arriba: ingreso, costo total, ganancia y cuánto del costo es estimado.
 
 Configuración (variables del servicio **web** en Railway, todas opcionales):
-- `COST_RATES` — JSON parcial, p. ej. `{"whatsapp":{"marketing":0.05},"phonePerMinute":0.02}`. Los valores por defecto son estimaciones para México: **ajústalos con tu factura de Meta/DIDWW/Retell**.
+- `COST_RATES` — JSON parcial, p. ej. `{"whatsapp":{"marketing":0.05,"utility":0.01,"service":0.01},"serviceFreePerMonth":1000,"phonePerMinute":0.02}`. Si no pones `service`, se usa la de `utility` (Meta cobra el servicio a la tarifa de utilidad/autenticación). Los valores por defecto son estimaciones: **las tablas de tarifas de Meta son archivos CSV/PDF por moneda (los .md de `docs/` no traen los montos de México): baja la de México en USD y ajusta**, y revisa tu factura de DIDWW y Retell.
 - `COST_FIXED_MONTHLY_USD` — JSON, p. ej. `{"Railway":20,"Número DIDWW":3}`.
 - `USD_MXN` — tipo de cambio (por defecto 18).
 

@@ -44,10 +44,17 @@ export function createStatusProcessor(deps: StatusDeps) {
         return { status: "updated" as const, to: "failed" };
       }
 
-      if ((RANK[status.status] ?? 0) <= (RANK[message.status] ?? 0)) return { status: "unchanged" as const };
+      // Lo que cobra Meta por este mensaje (para los costos): se guarda aunque el estado ya no avance.
+      const billing = status.pricing ? { pricingCategory: status.pricing.category.slice(0, 40), billable: status.pricing.billable } : {};
+      if ((RANK[status.status] ?? 0) <= (RANK[message.status] ?? 0)) {
+        if (status.pricing && (message.pricingCategory !== billing.pricingCategory || message.billable !== billing.billable)) {
+          await tx.update(messages).set(billing).where(eq(messages.id, message.id));
+        }
+        return { status: "unchanged" as const };
+      }
       await tx
         .update(messages)
-        .set({ status: status.status, error: null, updatedAt: new Date() })
+        .set({ status: status.status, error: null, ...billing, updatedAt: new Date() })
         .where(eq(messages.id, message.id));
       return { status: "updated" as const, to: status.status };
     });

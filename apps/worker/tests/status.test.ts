@@ -47,6 +47,19 @@ describe("avisos de entrega", () => {
     expect((await statusOf(id)).status).toBe("read");
   });
 
+  it("guarda como cobra Meta el mensaje (categoria y si se cobra), tambien si el estado ya no avanza", async () => {
+    const id = await sentMessage("wamid.P1");
+    await process()(status("wamid.P1", "read")); // ya leido, sin dato de cobro
+    expect((await statusOf(id)).pricingCategory).toBeNull();
+    // El aviso "sent" llega tarde (ya no cambia el estado) pero trae el cobro: se guarda igual.
+    expect(await process()(status("wamid.P1", "sent", { pricing: { billable: true, category: "service", type: "regular" } }))).toEqual({ status: "unchanged" });
+    expect(await statusOf(id)).toMatchObject({ status: "read", pricingCategory: "service", billable: true });
+
+    const free = await sentMessage("wamid.P2");
+    await process()(status("wamid.P2", "delivered", { pricing: { billable: false, category: "service", type: "free_customer_service" } }));
+    expect(await statusOf(free)).toMatchObject({ status: "delivered", pricingCategory: "service", billable: false });
+  });
+
   it("registra el motivo cuando WhatsApp reporta un fallo", async () => {
     const id = await sentMessage("wamid.S3");
     await process()(status("wamid.S3", "failed", { errorCode: 131047, errorTitle: "Re-engagement message" }));

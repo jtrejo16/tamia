@@ -399,6 +399,12 @@ export interface OperatorCostRow {
   tplUtility: number;
   tplAuthentication: number;
   tplUnknown: number;
+  svcLegacy: number;
+  billedMarketing: number;
+  billedUtility: number;
+  billedAuthentication: number;
+  billedService: number;
+  billedOther: number;
   waIn: number;
   waOut: number;
 }
@@ -420,6 +426,12 @@ export async function operatorCostRows(db: Database, userId: string, from: Date,
       tplUtility: Number(r.tpl_utility),
       tplAuthentication: Number(r.tpl_authentication),
       tplUnknown: Number(r.tpl_unknown),
+      svcLegacy: Number(r.svc_legacy),
+      billedMarketing: Number(r.billed_marketing),
+      billedUtility: Number(r.billed_utility),
+      billedAuthentication: Number(r.billed_authentication),
+      billedService: Number(r.billed_service),
+      billedOther: Number(r.billed_other),
       waIn: Number(r.wa_in),
       waOut: Number(r.wa_out),
     }));

@@ -16,7 +16,26 @@ afterAll(async () => {
   await dbs.owner.close();
 });
 
+const RATES = { whatsapp: { marketing: 0.04, utility: 0.01, authentication: 0.01, service: 0.01 }, serviceFreePerMonth: 1000, phonePerMinute: 0.02, retellFallbackPerMinute: 0.1 };
+const NO_WA = { aiMicros: 0, callSeconds: 0, callRecordedMicros: 0, callUnpricedSeconds: 0, tplMarketing: 0, tplUtility: 0, tplAuthentication: 0, tplUnknown: 0, svcLegacy: 0, billedMarketing: 0, billedUtility: 0, billedAuthentication: 0, billedService: 0, billedOther: 0, svcFreeTier: 1000 };
+
 describe("configuracion y precios", () => {
+  it("las respuestas de servicio son gratis hasta 1,000 al mes por numero y despues se cobran (politica de Meta desde oct-2026)", () => {
+    const at = (svcLegacy: number) => priceTenant({ ...NO_WA, svcLegacy }, RATES).whatsappUsd;
+    expect(at(800)).toBe(0);
+    expect(at(1000)).toBe(0);
+    expect(at(1500)).toBeCloseTo(500 * 0.01);
+    // Con dato de Meta se cuentan exactamente los que SI cobra, sin aplicar la regla de los gratis (Meta ya la aplico).
+    expect(priceTenant({ ...NO_WA, billedService: 300, billedUtility: 10, billedMarketing: 2, billedOther: 5 }, RATES).whatsappUsd).toBeCloseTo((300 + 5) * 0.01 + 10 * 0.01 + 2 * 0.04);
+    // Mezcla: lo que ya se facturo cuenta contra los gratis.
+    expect(priceTenant({ ...NO_WA, billedService: 1000, svcLegacy: 10 }, RATES).whatsappUsd).toBeCloseTo(1000 * 0.01 + 10 * 0.01);
+  });
+
+  it("el cobro de servicio usa por defecto la tarifa de utilidad, y se puede fijar aparte", () => {
+    expect(costConfigFromEnv({ COST_RATES: JSON.stringify({ whatsapp: { utility: 0.02 } }) }).rates.whatsapp.service).toBe(0.02);
+    expect(costConfigFromEnv({ COST_RATES: JSON.stringify({ whatsapp: { utility: 0.02, service: 0.03 }, serviceFreePerMonth: 500 }) }).rates).toMatchObject({ whatsapp: { service: 0.03 }, serviceFreePerMonth: 500 });
+  });
+
   it("usa tarifas por defecto y tolera valores mal escritos", () => {
     const c = costConfigFromEnv({});
     expect(c.rates).toEqual(DEFAULT_RATES);
@@ -43,8 +62,8 @@ describe("configuracion y precios", () => {
 
   it("suma IA real, voz real + estimada, telefonia y plantillas de Meta", () => {
     const cost = priceTenant(
-      { aiMicros: 2_500_000, callSeconds: 600, callRecordedMicros: 400_000, callUnpricedSeconds: 120, tplMarketing: 10, tplUtility: 4, tplAuthentication: 0, tplUnknown: 1 },
-      { whatsapp: { marketing: 0.04, utility: 0.01, authentication: 0.01 }, phonePerMinute: 0.02, retellFallbackPerMinute: 0.1 },
+      { ...NO_WA, aiMicros: 2_500_000, callSeconds: 600, callRecordedMicros: 400_000, callUnpricedSeconds: 120, tplMarketing: 10, tplUtility: 4, tplAuthentication: 0, tplUnknown: 1 },
+      RATES,
     );
     expect(cost.aiUsd).toBeCloseTo(2.5);
     expect(cost.voiceUsd).toBeCloseTo(0.4 + 0.2); // real + 2 min estimados
@@ -64,7 +83,7 @@ describe("configuracion y precios", () => {
     const now = new Date("2027-03-16T12:00:00Z");
     expect(periodRange("last_month", now).days).toBe(28);
     const cfg = costConfigFromEnv({ COST_FIXED_MONTHLY_USD: JSON.stringify({ Railway: 30 }), USD_MXN: "20" });
-    const usage = { tenantId: "a", aiMicros: 1_000_000, aiTokensIn: 0, aiTokensOut: 0, callCount: 0, callSeconds: 0, callRecordedMicros: 0, callUnpricedSeconds: 0, tplMarketing: 0, tplUtility: 0, tplAuthentication: 0, tplUnknown: 0, waIn: 0, waOut: 0 };
+    const usage = { tenantId: "a", aiMicros: 1_000_000, aiTokensIn: 0, aiTokensOut: 0, callCount: 0, callSeconds: 0, callRecordedMicros: 0, callUnpricedSeconds: 0, tplMarketing: 0, tplUtility: 0, tplAuthentication: 0, tplUnknown: 0, svcLegacy: 0, billedMarketing: 0, billedUtility: 0, billedAuthentication: 0, billedService: 0, billedOther: 0, waIn: 0, waOut: 0 };
     const rep = buildCostReport("7d", cfg, [usage], [{ id: "a", name: "A", plan: "profesional", status: "active", bucket: "paid", mrrMxn: 3000 }, { id: "b", name: "B", plan: "esencial", status: "active", bucket: "trial", mrrMxn: 0 }], now);
     expect(rep.fixed[0]!.usd).toBeCloseTo((30 * 7) / 30);
     expect(rep.clients[0]!.tenantId).toBe("a"); // el mas caro primero
@@ -116,6 +135,34 @@ describe("costos (base de datos)", () => {
     expect(c.cost.voiceUsd).toBeCloseTo(0.3 + (60 / 60) * DEFAULT_RATES.retellFallbackPerMinute);
     expect(c.cost.whatsappUsd).toBeCloseTo(2 * DEFAULT_RATES.whatsapp.marketing + 2 * DEFAULT_RATES.whatsapp.utility);
     expect(JSON.stringify(r.report)).not.toMatch(/credentials|accessToken|body/i);
+  });
+
+  it("cuenta las respuestas del asistente (servicio) y usa el dato real de Meta cuando lo hay", async () => {
+    const op = await makeWorld(dbs.owner);
+    const client = await makeWorld(dbs.owner);
+    worlds.push(op, client);
+    await dbs.owner.db.update(users).set({ isOperator: true }).where(eq(users.id, op.ownerId));
+    const out = (over: Partial<typeof messages.$inferInsert>) => ({
+      tenantId: client.tenantId, conversationId: client.conversationId, channelId: client.channelId,
+      direction: "out" as const, sender: "bot" as const, type: "text" as const, body: "respuesta", status: "delivered" as const, ...over,
+    });
+    await dbs.owner.db.insert(messages).values([
+      out({}), out({}), out({}), // respuestas sin dato de Meta aun: se estiman como servicio
+      out({ pricingCategory: "service", billable: false }), // dentro de los gratis: Meta no cobra
+      out({ pricingCategory: "service", billable: true }), out({ pricingCategory: "service", billable: true }), // pasados los gratis
+      out({ pricingCategory: "utility", billable: true }),
+      out({ pricingCategory: "marketing", billable: true }),
+      { ...out({ body: "hola" }), direction: "in" as const, sender: "contact" as const, status: "received" as const }, // del cliente: no se cobra
+    ]);
+
+    const r = await operatorCosts(dbs.app.db, op.ownerId, costConfigFromEnv({}), "7d");
+    if (!r.ok) throw new Error("sin reporte");
+    const c = r.report.clients.find((x) => x.tenantId === client.tenantId)!;
+    expect(c.usage).toMatchObject({ svcLegacy: 3, billedService: 2, billedUtility: 1, billedMarketing: 1, waIn: 1 });
+    expect(c.usage.svcFreeTier).toBeGreaterThan(0);
+    // 3 respuestas sin dato caben en los gratis; los 4 cobrados por Meta se cuentan tal cual.
+    expect(c.cost.whatsappUsd).toBeCloseTo(2 * DEFAULT_RATES.whatsapp.service + DEFAULT_RATES.whatsapp.utility + DEFAULT_RATES.whatsapp.marketing);
+    expect(r.report.totals.serviceMsgs).toBeGreaterThanOrEqual(5);
   });
 
   it("al terminar la llamada Retell, el costo queda en la llamada", async () => {

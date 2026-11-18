@@ -193,6 +193,9 @@ export const messages = pgTable(
     externalId: text("external_id"),
     status: messageStatusEnum("status").notNull().default("received"),
     error: text("error"),
+    /** Categoria con la que Meta cobra este mensaje saliente y si se cobra (aviso de estado de Meta). null = aun no se sabe. */
+    pricingCategory: text("pricing_category"),
+    billable: boolean("billable"),
     tokensIn: integer("tokens_in"),
     tokensOut: integer("tokens_out"),
     ...timestamps,

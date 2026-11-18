@@ -82,11 +82,14 @@ function normalizeStatus(raw: Obj): StatusEvent | null {
     return null;
   }
   const error = isObj(arr(raw.errors)[0]) ? (arr(raw.errors)[0] as Obj) : undefined;
+  const p = isObj(raw.pricing) ? raw.pricing : undefined;
+  const category = p ? str(p.category) : undefined;
   return {
     id,
     status,
     recipientId: str(raw.recipient_id),
     timestamp: num(raw.timestamp) ?? Math.floor(Date.now() / 1000),
+    ...(p && category && typeof p.billable === "boolean" ? { pricing: { billable: p.billable, category, ...(str(p.type) ? { type: str(p.type)! } : {}) } } : {}),
     ...(error
       ? { errorCode: num(error.code), errorTitle: str(error.title), errorMessage: str(error.message) }
       : {}),
