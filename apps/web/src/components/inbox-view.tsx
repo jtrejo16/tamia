@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { api, makeFormatters, timeLeft, usePolling } from "@/lib/client";
 import type { Serialized } from "@/lib/types";
+import { NewAppointmentDialog } from "./new-appointment-dialog";
 import { canAct, usePanel } from "./panel-context";
 import { Alert, Avatar, Badge, Button, EmptyState, RichText, Spinner, cx } from "./ui";
 
@@ -189,6 +190,7 @@ function ConversationPane({ id, onBack }: { id: string; onBack: () => void }) {
 
   const [text, setText] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [newAppt, setNewAppt] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -295,8 +297,18 @@ function ConversationPane({ id, onBack }: { id: string; onBack: () => void }) {
             Devolver al asistente
           </Button>
         )}
+        <Button variant="secondary" onClick={() => setNewAppt(true)} disabled={!writable} className="py-1.5">+ Nueva cita</Button>
         {c.state !== "closed" && (
           <Button variant="ghost" onClick={() => act("close")} loading={busy === "close"} disabled={!writable} className="py-1.5">Cerrar</Button>
+        )}
+        {newAppt && (
+          <NewAppointmentDialog
+            contact={{ id: c.contact.id, name: c.contact.name }}
+            conversationId={c.id}
+            canNotify={mine && c.windowOpen && c.channel !== "voice"}
+            onClose={() => setNewAppt(false)}
+            onCreated={() => void detail.reload()}
+          />
         )}
         <div className="ml-auto flex items-center gap-2 sm:hidden">
           {c.windowOpen ? <Badge tone="green">{left}</Badge> : <Badge tone="slate">Ventana cerrada</Badge>}

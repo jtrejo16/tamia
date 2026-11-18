@@ -18,6 +18,11 @@ const MESSAGES: Record<string, string> = {
   actions_failed: "No se pudo ejecutar lo que proponía el asistente. No se envió nada.",
   invalid_transition: "Ese cambio de estado no es válido para esta cita.",
   slot_taken: "Ese horario ya está ocupado.",
+  horario_no_disponible: "Ese horario ya no está libre. Elige otro.",
+  servicio_no_encontrado: "Ese servicio ya no existe o está desactivado.",
+  empleado_no_disponible: "Nadie atiende ese servicio. Revisa en Ajustes quién lo ofrece.",
+  fecha_invalida: "La fecha no es válida.",
+  contacto_no_encontrado: "No se encontró al cliente.",
   bad_session: "Sesión de prueba inválida.",
   invalid_credentials: "Correo o contraseña incorrectos.",
   no_membership: "Tu usuario no pertenece a ningún negocio.",
@@ -107,6 +112,11 @@ const STATUS: Record<string, number> = {
   actions_failed: 409,
   invalid_transition: 409,
   slot_taken: 409,
+  horario_no_disponible: 409,
+  servicio_no_encontrado: 404,
+  empleado_no_disponible: 409,
+  fecha_invalida: 400,
+  contacto_no_encontrado: 404,
 };
 
 export function failure(error: string, extra: Record<string, unknown> = {}): NextResponse {

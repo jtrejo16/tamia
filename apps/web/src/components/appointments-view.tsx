@@ -4,6 +4,7 @@ import type { AppointmentView } from "@empleado/inbox";
 import { useMemo, useState } from "react";
 import { api, makeFormatters, usePolling } from "@/lib/client";
 import type { Serialized } from "@/lib/types";
+import { NewAppointmentDialog } from "./new-appointment-dialog";
 import { canAct, usePanel } from "./panel-context";
 import { Alert, Badge, Button, EmptyState, Spinner } from "./ui";
 
@@ -24,6 +25,7 @@ export function AppointmentsView() {
   const list = usePolling<{ ok: true; items: Appointment[] }>(`/api/appointments${all ? "?all=1" : ""}`, 8000);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [newOpen, setNewOpen] = useState(false);
   const items = list.data?.items ?? [];
 
   const groups = useMemo(() => {
@@ -56,11 +58,15 @@ export function AppointmentsView() {
             <h1 className="text-lg font-semibold text-slate-900">Citas</h1>
             <p className="text-sm text-slate-500">Los próximos 30 días, en la hora de {panel.tenantName}.</p>
           </div>
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} className="h-4 w-4 rounded accent-teal-700" />
-            Mostrar canceladas y pasadas
-          </label>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} className="h-4 w-4 rounded accent-teal-700" />
+              Mostrar canceladas y pasadas
+            </label>
+            {canAct(panel.role) && <Button onClick={() => setNewOpen(true)} className="py-1.5">+ Nueva cita</Button>}
+          </div>
         </div>
+        {newOpen && <NewAppointmentDialog onClose={() => setNewOpen(false)} onCreated={() => void list.reload()} />}
 
         {error && <Alert>{error}</Alert>}
 
@@ -70,7 +76,7 @@ export function AppointmentsView() {
           <Alert>{list.error.message}</Alert>
         ) : groups.length === 0 ? (
           <div className="rounded-2xl bg-white py-16 ring-1 ring-slate-200">
-            <EmptyState title="No hay citas próximas" hint="Las que agende el asistente por WhatsApp aparecerán aquí." />
+            <EmptyState title="No hay citas próximas" hint="Las que agende el asistente (o tú con «Nueva cita») aparecerán aquí." />
           </div>
         ) : (
           groups.map((g) => (

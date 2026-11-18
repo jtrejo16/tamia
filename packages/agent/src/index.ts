@@ -9,5 +9,5 @@ export * from "./format";
 export * from "./humanhours";
 export * from "./knowledge-search";
 export * from "./types";
-export { applyApprovedActions, isMutating, runTool, toolDefinitions, TOOLS, upcomingAppointments } from "./tools";
-export type { ToolRun } from "./tools";
+export { applyApprovedActions, bookAppointmentManually, isMutating, listFreeSlots, runTool, toolDefinitions, TOOLS, upcomingAppointments } from "./tools";
+export type { ManualBookingError, ManualSlot, ToolRun } from "./tools";

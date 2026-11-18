@@ -11,6 +11,7 @@ import {
   services,
   staff,
   staffServices,
+  tenants,
   withTenant,
   type ProposedAction,
   type Service,
@@ -157,7 +158,10 @@ type SlotCheck =
   | { ok: false; error: string }
   | { ok: true; free: boolean; service: Service; staffRows: StaffRow[] };
 
-async function gatherAvailability(tx: Tx, ctx: TurnContext, q: AvailabilityQuery): Promise<Gathered> {
+/** Lo unico que hace falta del turno para calcular disponibilidad (asi tambien lo usa el panel). */
+type ClockCtx = { now: Date; tenant: { timezone: string } };
+
+async function gatherAvailability(tx: Tx, ctx: ClockCtx, q: AvailabilityQuery): Promise<Gathered> {
   const [service] = await tx
     .select()
     .from(services)
@@ -224,7 +228,7 @@ async function gatherAvailability(tx: Tx, ctx: TurnContext, q: AvailabilityQuery
 /** Comprueba que EXACTAMENTE ese horario siga libre para ese empleado. */
 async function slotIsFree(
   tx: Tx,
-  ctx: TurnContext,
+  ctx: ClockCtx,
   q: { serviceId: string; staffId: string; start: Date; excludeAppointmentId?: string },
 ): Promise<SlotCheck> {
   const found = await gatherAvailability(tx, ctx, {
@@ -832,6 +836,110 @@ export async function recordEscalation(
     mensaje_sugerido: ctx.escalationMessage,
     instruccion: "Informa al cliente de forma honesta y breve; no sigas resolviendo el tema tú.",
   };
+}
+
+// ------------------------------------------- agendar a mano (desde el panel)
+
+export type ManualSlot = { startIso: string; staffId: string; staffName: string };
+export type ManualBookingError = "servicio_no_encontrado" | "empleado_no_disponible" | "fecha_invalida" | "horario_no_disponible" | "contacto_no_encontrado";
+
+/**
+ * Horarios libres para que una PERSONA agende (panel). Es la misma disponibilidad que usa el asistente
+ * (horario, festivos, citas existentes, descansos), pero devuelve TODOS los horarios de los dias pedidos.
+ */
+export async function listFreeSlots(
+  db: Parameters<typeof withTenant>[0],
+  tenantId: string,
+  q: { serviceId: string; staffId?: string; fromDay: string; days: number; now?: Date },
+): Promise<{ ok: true; timezone: string; service: { id: string; name: string; durationMin: number }; slots: ManualSlot[] } | { ok: false; error: ManualBookingError }> {
+  const day = parseDateKey(q.fromDay);
+  if (!day) return { ok: false, error: "fecha_invalida" };
+  const now = q.now ?? new Date();
+  const days = Math.min(Math.max(Math.floor(q.days), 1), 31);
+
+  return withTenant(db, { tenantId }, async (tx) => {
+    const [tenant] = await tx.select({ tz: tenants.timezone }).from(tenants).where(eq(tenants.id, tenantId));
+    const timezone = tenant?.tz ?? "America/Merida";
+    const found = await gatherAvailability(tx, { now, tenant: { timezone } }, {
+      serviceId: q.serviceId,
+      staffId: q.staffId,
+      from: startOfLocalDay(day, timezone),
+      to: startOfLocalDay(addDays(day, days), timezone),
+    });
+    if (!found.ok) return { ok: false as const, error: found.error };
+    const names = new Map(found.staffRows.map((s) => [s.id, s.name]));
+    return {
+      ok: true as const,
+      timezone,
+      service: { id: found.service.id, name: found.service.name, durationMin: found.service.durationMin },
+      slots: found.slots
+        .map((s): ManualSlot => ({ startIso: s.start.toISOString(), staffId: s.staffId, staffName: names.get(s.staffId) ?? "" }))
+        .sort((a, b) => a.startIso.localeCompare(b.startIso) || a.staffName.localeCompare(b.staffName)),
+    };
+  });
+}
+
+/**
+ * Una persona agenda una cita para un cliente (panel): sin el protocolo de confirmacion del asistente, pero con
+ * las mismas reglas de disponibilidad y la misma proteccion contra horarios empalmados. Queda en la bitacora.
+ */
+export async function bookAppointmentManually(
+  db: Parameters<typeof withTenant>[0],
+  input: { tenantId: string; userId: string; contactId: string; serviceId: string; staffId: string; startIso: string; sourceConversationId?: string | null; now?: Date },
+): Promise<
+  | { ok: true; appointmentId: string; startsAt: Date; endsAt: Date; service: { name: string; durationMin: number; priceCents: number | null; currency: string; requiresDeposit: boolean }; staffName: string }
+  | { ok: false; error: ManualBookingError }
+> {
+  const start = new Date(input.startIso);
+  if (Number.isNaN(start.getTime())) return { ok: false, error: "fecha_invalida" };
+  const now = input.now ?? new Date();
+
+  try {
+    return await withTenant(db, { tenantId: input.tenantId, userId: input.userId }, async (tx) => {
+      const [contact] = await tx.select({ id: contacts.id }).from(contacts).where(eq(contacts.id, input.contactId));
+      if (!contact) return { ok: false as const, error: "contacto_no_encontrado" as const };
+      const [tenant] = await tx.select({ tz: tenants.timezone }).from(tenants).where(eq(tenants.id, input.tenantId));
+      const clock = { now, tenant: { timezone: tenant?.tz ?? "America/Merida" } };
+
+      const check = await slotIsFree(tx, clock, { serviceId: input.serviceId, staffId: input.staffId, start });
+      if (!check.ok) return { ok: false as const, error: check.error as ManualBookingError };
+      if (!check.free) return { ok: false as const, error: "horario_no_disponible" as const };
+
+      const service = check.service;
+      const [row] = await tx
+        .insert(appointments)
+        .values({
+          tenantId: input.tenantId,
+          contactId: input.contactId,
+          serviceId: service.id,
+          staffId: input.staffId,
+          startsAt: start,
+          endsAt: new Date(start.getTime() + service.durationMin * 60_000),
+          status: "confirmed",
+          sourceConversationId: input.sourceConversationId ?? null,
+        })
+        .returning();
+      await tx.insert(auditLog).values({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        action: "appointment.created",
+        entity: "appointment",
+        entityId: row!.id,
+        diff: { actor: "panel", start: start.toISOString(), service: service.name },
+      });
+      return {
+        ok: true as const,
+        appointmentId: row!.id,
+        startsAt: row!.startsAt,
+        endsAt: row!.endsAt,
+        service: { name: service.name, durationMin: service.durationMin, priceCents: service.priceCents, currency: service.currency, requiresDeposit: service.requiresDeposit },
+        staffName: check.staffRows.find((s) => s.id === input.staffId)?.name ?? "",
+      };
+    });
+  } catch (e) {
+    if (pgCode(e) === "23P01") return { ok: false, error: "horario_no_disponible" }; // alguien lo tomo justo antes
+    throw e;
+  }
 }
 
 // -------------------------------------------------------- apoyo de las citas
