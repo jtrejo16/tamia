@@ -1,5 +1,6 @@
 "use client";
 
+import { VERTICALS } from "@empleado/shared/verticals";
 import { useState, type FormEvent } from "react";
 import { api } from "@/lib/client";
 import { Alert, Button } from "./ui";
@@ -13,7 +14,7 @@ const TIMEZONES = [
 ];
 
 export function SignupForm() {
-  const [form, setForm] = useState({ businessName: "", ownerName: "", email: "", password: "", timezone: "America/Merida" });
+  const [form, setForm] = useState({ businessName: "", vertical: "", ownerName: "", email: "", password: "", timezone: "America/Merida" });
   const [error, setError] = useState<{ text: string; details?: string[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm((p) => ({ ...p, [k]: e.target.value }));
@@ -22,7 +23,7 @@ export function SignupForm() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const res = await api<{ ok: true }>("/api/signup", { method: "POST", body: { ...form, vertical: "dental" } });
+    const res = await api<{ ok: true }>("/api/signup", { method: "POST", body: form });
     if (res.ok) {
       window.location.href = "/facturacion?nuevo=1";
       return;
@@ -42,8 +43,14 @@ export function SignupForm() {
           {error.details && <ul className="mt-1 list-disc pl-5">{error.details.map((d, i) => <li key={i}>{d}</li>)}</ul>}
         </Alert>
       )}
-      <label className="block text-sm font-medium text-slate-700">Nombre de tu clínica
-        <input required className={field} value={form.businessName} onChange={set("businessName")} placeholder="Clínica Dental Sonrisa" />
+      <label className="block text-sm font-medium text-slate-700">Nombre de tu negocio
+        <input required className={field} value={form.businessName} onChange={set("businessName")} placeholder="Estética Luna, Clínica Sonrisa, Taller López…" />
+      </label>
+      <label className="block text-sm font-medium text-slate-700">Giro de tu negocio
+        <select required className={field} value={form.vertical} onChange={set("vertical")}>
+          <option value="" disabled>Elige el que más se parezca…</option>
+          {VERTICALS.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+        </select>
       </label>
       <label className="block text-sm font-medium text-slate-700">Zona horaria
         <select className={field} value={form.timezone} onChange={set("timezone")}>

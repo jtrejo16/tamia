@@ -20,6 +20,7 @@ import {
   assertPasswordStrength,
   hashPassword,
   isPlanId,
+  VERTICAL_IDS,
   type AccessReason,
   type PlanId,
   type SubscriptionFacts,
@@ -34,11 +35,11 @@ import { can, fail, type Failure, type PanelContext, type Success } from "./type
 
 // ----------------------------------------------------------------- alta (registro publico)
 
-export const VERTICALS = [{ id: "dental", label: "Clínica dental" }] as const;
+export { VERTICALS, type VerticalId } from "@empleado/shared";
 
 const signupSchema = z.object({
   businessName: z.string().trim().min(2, "Escribe el nombre del negocio").max(80),
-  vertical: z.enum(["dental"]),
+  vertical: z.enum(VERTICAL_IDS, { message: "Elige el giro de tu negocio" }),
   timezone: z.string().trim().min(3).max(60).default("America/Merida"),
   ownerName: z.string().trim().min(2, "Escribe tu nombre").max(80),
   email: z.string().trim().toLowerCase().email("Correo inválido").max(120),

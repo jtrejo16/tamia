@@ -6,9 +6,9 @@ import { getValidSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-const TITLE = "Tamia · Tu recepcionista con IA para WhatsApp y llamadas";
+const TITLE = "Tamia · Tu recepcionista con IA para cualquier negocio con citas";
 const DESCRIPTION =
-  "Tamia contesta a tus pacientes por WhatsApp, agenda sus citas y les manda recordatorios, las 24 horas. Para clínicas dentales y negocios con citas. Pruébalo 14 días gratis.";
+  "Tamia contesta a tus clientes por WhatsApp, agenda sus citas y les manda recordatorios, las 24 horas. Para cualquier negocio que trabaje con citas o reservas: clínicas, estéticas, veterinarias, gimnasios, talleres, despachos y más. Pruébalo 14 días gratis.";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -42,6 +42,7 @@ export default async function Landing() {
             <span className="text-lg font-semibold tracking-tight">Tamia</span>
           </a>
           <nav aria-label="Secciones" className="hidden items-center gap-7 text-sm font-medium text-slate-600 md:flex">
+            <a className="hover:text-teal-800" href="#giros">Para tu negocio</a>
             <a className="hover:text-teal-800" href="#como-funciona">Cómo funciona</a>
             <a className="hover:text-teal-800" href="#que-incluye">Qué incluye</a>
             <a className="hover:text-teal-800" href="#precios">Precios</a>
@@ -62,14 +63,14 @@ export default async function Landing() {
           <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 pb-16 pt-12 sm:px-6 md:pt-20 lg:grid-cols-[1.05fr_0.95fr] lg:pb-24">
             <div>
               <p className="inline-flex items-center gap-2 rounded-full bg-teal-100/70 px-3 py-1 text-xs font-semibold text-teal-900">
-                <span className="h-1.5 w-1.5 rounded-full bg-teal-600" /> Para clínicas dentales y negocios con citas
+                <span className="h-1.5 w-1.5 rounded-full bg-teal-600" /> Para cualquier negocio que trabaje con citas o reservas
               </p>
               <h1 className="mt-5 text-4xl font-semibold leading-[1.1] tracking-tight text-slate-900 sm:text-5xl">
                 Tu recepcionista con inteligencia artificial,{" "}
                 <span className="text-teal-700">siempre disponible</span>
               </h1>
               <p className="mt-5 max-w-xl text-lg leading-relaxed text-slate-600">
-                Tamia contesta a tus pacientes por WhatsApp, resuelve sus dudas, <strong className="font-semibold text-slate-800">agenda sus citas</strong> y les manda recordatorios. Tú atiendes a quien está en el sillón; ella atiende al resto.
+                Tamia contesta a tus clientes por WhatsApp, resuelve sus dudas, <strong className="font-semibold text-slate-800">agenda sus citas</strong> y les manda recordatorios. Tú atiendes a quien tienes enfrente; ella atiende al resto.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <a href={signup} className="inline-flex items-center justify-center rounded-xl bg-teal-700 px-6 py-3.5 text-base font-semibold text-white shadow-sm hover:bg-teal-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2">
@@ -91,19 +92,19 @@ export default async function Landing() {
               <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-gradient-to-br from-teal-200/50 to-emerald-100/40 blur-2xl" />
               <div className="overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-slate-200">
                 <div className="flex items-center gap-3 bg-teal-700 px-4 py-3 text-white">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-sm font-semibold">S</span>
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 text-sm font-semibold">E</span>
                   <div className="leading-tight">
-                    <p className="text-sm font-semibold">Clínica Dental Sonrisa</p>
+                    <p className="text-sm font-semibold">Estética Luna</p>
                     <p className="text-xs text-teal-100">asistente virtual · en línea</p>
                   </div>
                 </div>
                 <div className="space-y-2.5 bg-[#efeae2] p-4 text-[13.5px] leading-snug">
-                  <Bubble who="in">Hola, quiero una limpieza dental para mañana por la tarde 🙂</Bubble>
-                  <Bubble who="out">¡Hola! Soy Sonri, la asistente virtual de la clínica. Mañana tengo libre a las <b>4:00</b>, <b>4:45</b> o <b>5:30 pm</b> con la Dra. Ruiz. ¿Cuál te acomoda?</Bubble>
+                  <Bubble who="in">Hola, quiero cita para corte y peinado mañana por la tarde 🙂</Bubble>
+                  <Bubble who="out">¡Hola! Soy la asistente virtual de Estética Luna. Mañana tengo libre a las <b>4:00</b>, <b>4:45</b> o <b>5:30 pm</b> con Karla. ¿Cuál te acomoda?</Bubble>
                   <Bubble who="in">A las 4:45</Bubble>
                   <Bubble who="out">Perfecto. ¿Me das tu nombre completo para apartarla?</Bubble>
                   <Bubble who="in">Laura Méndez</Bubble>
-                  <Bubble who="out">Listo, Laura: tu <b>limpieza dental</b> quedó mañana a las <b>4:45 pm</b> con la Dra. Ruiz. Te mando un recordatorio antes. ✅</Bubble>
+                  <Bubble who="out">Listo, Laura: tu <b>corte y peinado</b> quedó mañana a las <b>4:45 pm</b> con Karla. Te mando un recordatorio antes. ✅</Bubble>
                 </div>
               </div>
               <p className="mt-3 text-center text-xs text-slate-500">Ejemplo ilustrativo de una conversación.</p>
@@ -115,23 +116,40 @@ export default async function Landing() {
         <section className="border-y border-slate-200 bg-slate-50">
           <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
             <h2 className="mx-auto max-w-2xl text-center text-2xl font-semibold tracking-tight sm:text-3xl">
-              Un mensaje sin respuesta es un paciente que se va con otra clínica
+              Un mensaje sin respuesta es un cliente que se va con la competencia
             </h2>
             <div className="mt-10 grid gap-5 sm:grid-cols-3">
-              <Pain title="Escriben cuando tú no puedes" text="En la noche, en domingo o con la recepción ocupada. Quien pregunta por una cita casi siempre le escribe a más de una clínica." />
-              <Pain title="Siempre las mismas preguntas" text="Precios, horarios, ubicación, formas de pago. Tu equipo las contesta decenas de veces a la semana." />
-              <Pain title="Citas que se pierden" text="Sin recordatorio, la gente olvida su cita. Cada hueco vacío en la agenda es dinero que no regresa." />
+              <Pain title="Escriben cuando tú no puedes" text="En la noche, en domingo o con las manos ocupadas. Quien pregunta por una cita casi siempre le escribe a más de un negocio." />
+              <Pain title="Siempre las mismas preguntas" text="Precios, horarios, ubicación, formas de pago. Tú o tu equipo las contestan decenas de veces a la semana." />
+              <Pain title="Citas que se pierden" text="Sin recordatorio, la gente olvida su cita. Cada hueco vacío en la agenda es ingreso que no regresa." />
             </div>
           </div>
         </section>
 
+        {/* ------------------------------------------------------------ giros */}
+        <section id="giros" className="scroll-mt-20 mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
+          <SectionTitle kicker="Para todo tipo de negocio" title="Si trabajas con citas o reservas, Tamia se adapta a ti" />
+          <p className="mx-auto mt-3 max-w-2xl text-center text-slate-600">
+            Al registrarte eliges tu giro y ella ya sabe qué datos pedir y qué casos pasar a tu equipo. Tú le cargas tus servicios, precios y horarios.
+          </p>
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {INDUSTRIES.map(([name, example]) => (
+              <div key={name} className="rounded-2xl bg-white p-5 ring-1 ring-slate-200">
+                <h3 className="font-semibold text-slate-900">{name}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{example}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-6 text-center text-sm text-slate-500">¿Tu giro no está? Elige «Otro tipo de negocio»: funciona igual de bien.</p>
+        </section>
+
         {/* ------------------------------------------------------------ cómo funciona */}
         <section id="como-funciona" className="scroll-mt-20 mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
-          <SectionTitle kicker="Cómo funciona" title="De cero a atender pacientes, en tres pasos" />
+          <SectionTitle kicker="Cómo funciona" title="De cero a atender clientes, en tres pasos" />
           <ol className="mt-12 grid gap-6 md:grid-cols-3">
             {[
-              ["1", "Crea tu cuenta", `Registra tu clínica en un minuto. Tienes ${TRIAL_DAYS} días de prueba sin dar tarjeta. Revisamos cada cuenta nueva y la activamos, normalmente el mismo día hábil.`],
-              ["2", "Cuéntale cómo trabajas", "Carga tus servicios, precios, horarios y especialistas, y conecta tu número de WhatsApp. Ella solo responde con lo que tú le enseñas."],
+              ["1", "Crea tu cuenta", `Registra tu negocio y elige tu giro en un minuto. Tienes ${TRIAL_DAYS} días de prueba sin dar tarjeta. Revisamos cada cuenta nueva y la activamos, normalmente el mismo día hábil.`],
+              ["2", "Cuéntale cómo trabajas", "Carga tus servicios, precios, horarios y a tu equipo, y conecta tu número de WhatsApp. Ella solo responde con lo que tú le enseñas."],
               ["3", "Ella atiende, tú decides", "Contesta, agenda y recuerda. Empieza en modo «copiloto» (tú apruebas cada respuesta) y pasa a automático cuando confíes en ella."],
             ].map(([n, t, d]) => (
               <li key={n} className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
@@ -146,14 +164,14 @@ export default async function Landing() {
         {/* ------------------------------------------------------------ qué incluye */}
         <section id="que-incluye" className="scroll-mt-20 bg-slate-50">
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
-            <SectionTitle kicker="Qué incluye" title="Todo lo que necesita una recepción, sin contratar a nadie más" />
+            <SectionTitle kicker="Qué incluye" title="Todo lo que hace una recepción, sin contratar a nadie más" />
             <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              <Feature icon={<IconChat />} title="Atiende por WhatsApp" text="Contesta en segundos, con un tono amable, y entiende notas de voz. Usa el número de WhatsApp Business de tu clínica." />
-              <Feature icon={<IconCalendar />} title="Agenda citas reales" text="Ofrece solo horarios libres según tu agenda, tus especialistas y tus festivos. Nunca empalma dos citas." />
-              <Feature icon={<IconBell />} title="Recordatorios automáticos" text="Avisa a tus pacientes un día antes y unas horas antes de su cita, y les deja confirmar o cancelar." />
-              <Feature icon={<IconUser />} title="Pasa a una persona cuando hace falta" text="Si hay una queja, una urgencia o algo que no sabe, no inventa: te avisa y te deja un resumen de lo que quiere el paciente y por qué lo pasó." />
+              <Feature icon={<IconChat />} title="Atiende por WhatsApp" text="Contesta en segundos, con un tono amable, y entiende notas de voz. Usa el número de WhatsApp Business de tu negocio." />
+              <Feature icon={<IconCalendar />} title="Agenda citas reales" text="Ofrece solo horarios libres según tu agenda, tu equipo y tus festivos. Nunca empalma dos citas." />
+              <Feature icon={<IconBell />} title="Recordatorios automáticos" text="Avisa a tus clientes un día antes y unas horas antes de su cita, y les deja confirmar o cancelar." />
+              <Feature icon={<IconUser />} title="Pasa a una persona cuando hace falta" text="Si hay una queja, una urgencia o algo que no sabe, no inventa: te avisa y te deja un resumen de lo que quiere el cliente y por qué lo pasó." />
               <Feature icon={<IconShield />} title="Tú tienes el control" text="Elige cuánta libertad le das: aprobar cada respuesta, solo las de agenda, o que trabaje sola. Puedes tomar cualquier conversación cuando quieras." />
-              <Feature icon={<IconChart />} title="Estadísticas de tu clínica" text="Mensajes atendidos, citas agendadas, tiempo de respuesta y seguimiento, para ver cuánto trabajo te quita." />
+              <Feature icon={<IconChart />} title="Estadísticas de tu negocio" text="Mensajes atendidos, citas agendadas, tiempo de respuesta y seguimiento, para ver cuánto trabajo te quita." />
               <Feature icon={<IconPhone />} title="Atiende llamadas" tag="Complemento" text="Una voz con acento mexicano contesta el teléfono, resuelve dudas y agenda. Se contrata aparte; pregúntanos." />
               <Feature icon={<IconFacebook />} title="Messenger e Instagram" tag="Próximamente" text="La misma asistente, en los mensajes de tu página de Facebook y de tu Instagram, en la misma bandeja." />
               <Feature icon={<IconSync />} title="Se lleva bien con tu calendario" text="Las citas confirmadas pueden aparecer en tu Google Calendar para que nadie tenga que capturarlas dos veces." />
@@ -165,16 +183,16 @@ export default async function Landing() {
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
           <div className="grid items-center gap-10 lg:grid-cols-2">
             <div>
-              <SectionTitle kicker="Pensado para clínicas" title="Cuida a tus pacientes tanto como tú" align="left" />
+              <SectionTitle kicker="Pensado para cuidar a tus clientes" title="Que atiendan a tus clientes como tú lo harías" align="left" />
               <p className="mt-5 text-[15px] leading-relaxed text-slate-600">
-                Tamia no es un chatbot genérico. Conoce los servicios y horarios de <em>tu</em> clínica, y está hecha para no inventar precios, horarios ni consejos médicos.
+                Tamia no es un chatbot genérico. Conoce los servicios y horarios de <em>tu</em> negocio, y está hecha para no inventar precios, horarios ni consejos que no le corresponden.
               </p>
             </div>
             <ul className="space-y-4">
               {[
                 ["No inventa", "Responde con los datos que cargaste. Si no los tiene, avisa a tu equipo en lugar de adivinar."],
-                ["No da diagnósticos", "Ante dolor intenso o urgencias, pasa de inmediato la conversación a una persona de tu equipo."],
-                ["Datos de tu clínica, separados de los demás", "Cada negocio tiene su información aislada y protegida, y los accesos se guardan cifrados."],
+                ["Sabe cuándo parar", "Ante una urgencia, una queja o algo que no sabe, pasa de inmediato la conversación a una persona de tu equipo, sin dar diagnósticos ni asesoría."],
+                ["Los datos de tu negocio, separados de los demás", "Cada negocio tiene su información aislada y protegida, y los accesos se guardan cifrados."],
                 ["Tú decides", "Puedes revisar cada conversación y cada decisión que tomó."],
               ].map(([t, d]) => (
                 <li key={t} className="flex gap-3 rounded-xl bg-white p-4 ring-1 ring-slate-200">
@@ -277,14 +295,25 @@ export default async function Landing() {
 
 /* ------------------------------------------------------------------ datos */
 
+const INDUSTRIES: Array<[string, string]> = [
+  ["Clínicas y consultorios", "Agenda consultas, recuerda la cita y pasa de inmediato a una persona cuando hay una urgencia."],
+  ["Estéticas, barberías y spas", "Reserva con la estilista o el barbero que prefiere el cliente y evita huecos en la agenda."],
+  ["Veterinarias", "Pide los datos de la mascota, agenda la consulta o la estética y vigila las urgencias."],
+  ["Gimnasios y estudios", "Reserva clases y clases muestra, y contesta horarios, cupos y membresías."],
+  ["Talleres automotrices", "Toma los datos del vehículo y la falla, y agenda la revisión sin llamadas perdidas."],
+  ["Despachos y servicios profesionales", "Agenda la primera asesoría y avisa al instante cuando hay un plazo que corre."],
+  ["Escuelas, academias y talleres", "Agenda visitas y clases de prueba, y resuelve las dudas de siempre."],
+  ["Y cualquier negocio con citas", "Si tus clientes preguntan, reservan o confirman por WhatsApp, Tamia puede atenderlos."],
+];
+
 const FAQ: Array<[string, string]> = [
   ["¿Necesito tarjeta para probarlo?", `No. Tienes ${TRIAL_DAYS} días de prueba sin tarjeta. Al terminar eliges un plan; si no lo haces, el asistente simplemente deja de responder.`],
   ["¿Cuánto tarda en estar funcionando?", "Crear la cuenta toma un minuto. Revisamos cada cuenta nueva antes de activarla (normalmente el mismo día hábil). Mientras tanto puedes cargar tus servicios, horarios y preguntas frecuentes."],
-  ["¿Puede equivocarse o inventar cosas?", "Está diseñada para contestar solo con la información que tú le cargas: servicios, precios, horarios y políticas. Si no la tiene, o si el paciente se queja o tiene una urgencia, te avisa y te pasa la conversación con un resumen. Además puedes empezar en modo «copiloto» y aprobar cada respuesta."],
-  ["¿Mis pacientes sabrán que hablan con una IA?", "Sí. Se presenta como asistente virtual en su primer mensaje. Nunca finge ser una persona."],
-  ["¿Necesito cambiar mi número de WhatsApp?", "No. Conectas el número de WhatsApp Business de tu clínica a tu cuenta de Meta. Si necesitas ayuda, te acompañamos en la conexión."],
-  ["¿Qué pasa con los datos de mis pacientes?", "Cada clínica tiene su información separada de las demás y los accesos se guardan cifrados. Lee nuestro aviso de privacidad para el detalle: puedes pedir que borremos tus datos cuando quieras."],
-  ["¿Funciona solo para dentistas?", "Hoy está afinada para clínicas dentales, pero también sirve para consultorios y otros negocios que trabajan con citas: tú le cargas tus propios servicios y horarios."],
+  ["¿Puede equivocarse o inventar cosas?", "Está diseñada para contestar solo con la información que tú le cargas: servicios, precios, horarios y políticas. Si no la tiene, o si el cliente se queja o tiene una urgencia, te avisa y te pasa la conversación con un resumen. Además puedes empezar en modo «copiloto» y aprobar cada respuesta."],
+  ["¿Mis clientes sabrán que hablan con una IA?", "Sí. Se presenta como asistente virtual en su primer mensaje. Nunca finge ser una persona."],
+  ["¿Necesito cambiar mi número de WhatsApp?", "No. Conectas el número de WhatsApp Business de tu negocio a tu cuenta de Meta. Si necesitas ayuda, te acompañamos en la conexión."],
+  ["¿Qué pasa con los datos de mis clientes?", "Cada negocio tiene su información separada de las demás y los accesos se guardan cifrados. Lee nuestro aviso de privacidad para el detalle: puedes pedir que borremos tus datos cuando quieras."],
+  ["¿Funciona para mi tipo de negocio?", "Sí: sirve para cualquier negocio que trabaje con citas o reservas. Al registrarte eliges tu giro (clínica, estética, veterinaria, gimnasio, taller, despacho u otro) y ella ya sabe qué datos pedir y qué casos pasar a tu equipo. Tú le cargas tus propios servicios, precios y horarios."],
   ["¿Puedo cancelar cuando quiera?", "Sí, sin plazo forzoso. Si cancelas, conservas el acceso hasta el final del periodo que ya pagaste."],
 ];
 

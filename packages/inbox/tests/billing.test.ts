@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
-import { auditLog, subscriptions, tenants, users, withTenant } from "@empleado/db";
+import { loadPack } from "@empleado/agent";
+import { agentConfigs, auditLog, subscriptions, tenants, users, withTenant } from "@empleado/db";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -13,6 +14,7 @@ import {
   operatorTenants,
   signup,
   startCheckout,
+  VERTICALS,
   tenantAccess,
   verifyMercadoPagoSignature,
   type PanelContext,
@@ -97,6 +99,7 @@ describe("alta (registro publico)", () => {
     expect(await signup(dbs.app.db, { ...base, businessName: "" })).toMatchObject({ ok: false, error: "invalid" });
     expect(await signup(dbs.app.db, { ...base, email: "no-es-correo" })).toMatchObject({ ok: false, error: "invalid" });
     expect(await signup(dbs.app.db, { ...base, vertical: "otro" })).toMatchObject({ ok: false, error: "invalid" });
+    expect(await signup(dbs.app.db, { ...base, vertical: "" })).toMatchObject({ ok: false, error: "invalid" });
     expect(await signup(dbs.app.db, { ...base, timezone: "Marte/Olimpo" })).toMatchObject({ ok: false, error: "invalid" });
     expect(await signup(dbs.app.db, { ...base, password: "corta" })).toEqual({ ok: false, error: "weak_password" });
   });
@@ -405,5 +408,32 @@ describe("conciliacion periodica con Mercado Pago (red de seguridad si se pierde
     expect(asked).not.toContain(comped.id);
     expect(asked).not.toContain(canceled.id);
     expect(asked).not.toContain(stale.id);
+  });
+});
+
+describe("giros del registro", () => {
+  it("cada giro tiene su pack de reglas (y el pack se llama igual)", () => {
+    expect(VERTICALS.map((v) => v.id)).toEqual(expect.arrayContaining(["dental", "salud", "belleza", "mascotas", "bienestar", "automotriz", "profesional", "generico"]));
+    for (const v of VERTICALS) {
+      const pack = loadPack(v.id);
+      expect(pack.slug).toBe(v.id);
+      expect(pack.vertical).toBe(v.id);
+      expect(pack.urgency.instruction.length).toBeGreaterThan(10);
+      expect(pack.requiredAppointmentData).toMatch(/nombre/i);
+    }
+  });
+
+  it("al registrarse con un giro, el negocio y el asistente quedan con ese giro y su pack", async () => {
+    for (const vertical of ["belleza", "generico"] as const) {
+      const email = `g-${unique()}@test.local`;
+      const res = await signup(dbs.app.db, { businessName: `Negocio ${vertical}`, vertical, ownerName: "Ana", email, password: PASS });
+      if (!res.ok) throw new Error(`signup fallo: ${res.error}`);
+      tenantIds.push(res.tenantId);
+      userIds.push(res.userId);
+      const [tenant] = await dbs.owner.db.select().from(tenants).where(eq(tenants.id, res.tenantId));
+      const [config] = await dbs.owner.db.select().from(agentConfigs).where(eq(agentConfigs.tenantId, res.tenantId));
+      expect(tenant).toMatchObject({ vertical, status: "pending" });
+      expect(config).toMatchObject({ packSlug: vertical });
+    }
   });
 });
