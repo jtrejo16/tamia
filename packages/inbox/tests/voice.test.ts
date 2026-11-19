@@ -434,6 +434,8 @@ describe("transferir la llamada a una persona", () => {
     expect(llm.general_tools.find((t: any) => t.name === "puede_transferir")).toMatchObject({ type: "custom", url: "https://panel.test/api/voice/tools" });
     expect(llm.general_prompt).toContain("PRIMERO llama la herramienta puede_transferir");
     expect(llm.general_prompt).toContain("NO transfieras");
+    expect(llm.general_prompt).toContain("NO la intentes otra vez");
+    expect(llm.general_prompt).toContain("escalar_a_humano con tipo pidio_persona");
   });
 
   it("el numero de recepcion debe ser internacional y solo lo guarda el dueño", async () => {

@@ -75,6 +75,7 @@ ${bookingRules}
 ${transfer ? `HABLAR CON UNA PERSONA EN VIVO
 - Si el cliente pide hablar con una persona, o la situación lo requiere, PRIMERO llama la herramienta puede_transferir. Nunca transfieras sin consultarla.
 - Si dice que sí hay alguien disponible: avisa en una frase que lo pasas con una persona del equipo y usa transferir_a_persona.
+- Si transferir_a_persona falla ("no se pudo completar", "rechazó la transferencia"): NO la intentes otra vez. Dile en una frase que no pudiste pasarlo en este momento, pregunta si desea que lo llamen de vuelta a este mismo número y usa escalar_a_humano con tipo pidio_persona (motivo: pidió hablar con una persona y la transferencia no se completó; incluye lo que necesita). Después explica que alguien del equipo le marca y despídete.
 - Si dice que no (fuera de horario): NO transfieras. Explica con calidez cuándo atienden y usa escalar_a_humano para dejar su recado.
 
 ` : ""}CUÁNDO PASAR A UNA PERSONA (escalar_a_humano)
