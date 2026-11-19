@@ -421,16 +421,16 @@ describe("transferir la llamada a una persona", () => {
     expect(llm.general_prompt).not.toContain("puede_transferir");
   });
 
-  it("con numero: se crea la transferencia ASISTIDA a ese numero y la consulta de disponibilidad; el prompt exige consultarla antes", async () => {
+  it("con numero: se crea la transferencia en FRIO (SIP REFER) a ese numero y la consulta de disponibilidad; el prompt exige consultarla antes", async () => {
     const { rc } = await withTransfer();
     const llm = rc.find((c) => c.path === "/create-retell-llm")!.body;
     const transfer = llm.general_tools.find((t: any) => t.type === "transfer_call");
     expect(transfer).toMatchObject({
       name: "transferir_a_persona",
       transfer_destination: { type: "predefined", number: "+529981110099" },
-      transfer_option: { type: "warm_transfer" },
+      transfer_option: { type: "cold_transfer", cold_transfer_mode: "sip_refer" },
     });
-    expect(transfer.transfer_option.public_handoff_option.message).toContain("Clínica Panel");
+    expect(transfer.transfer_option.public_handoff_option).toBeUndefined();
     expect(llm.general_tools.find((t: any) => t.name === "puede_transferir")).toMatchObject({ type: "custom", url: "https://panel.test/api/voice/tools" });
     expect(llm.general_prompt).toContain("PRIMERO llama la herramienta puede_transferir");
     expect(llm.general_prompt).toContain("NO transfieras");

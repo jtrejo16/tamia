@@ -163,11 +163,9 @@ export async function syncVoiceAgent(
             name: VOICE_TRANSFER_TOOL,
             description: "Pasa la llamada en vivo a una persona del equipo. Solo después de que puede_transferir diga que hay alguien disponible.",
             transfer_destination: { type: "predefined" as const, number: settings.transferNumber! },
-            // Asistida: quien contesta oye un aviso antes de que se conecte el cliente.
-            transfer_option: {
-              type: "warm_transfer",
-              public_handoff_option: { type: "static_message", message: `Te paso una llamada de un cliente de ${tenant.name} que atendió el asistente telefónico.` },
-            },
+            // En frio por SIP REFER: Retell le pide a la linea (DIDWW) que reenvie la llamada. La asistida marca una llamada
+            // nueva por la troncal de SALIDA, y con la linea de DIDWW (solo entrada) la rechazan (403).
+            transfer_option: { type: "cold_transfer", cold_transfer_mode: "sip_refer" },
           },
         ]
       : []),

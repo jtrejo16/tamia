@@ -45,7 +45,7 @@ En Ajustes → Llamadas, el dueño puede guardar el **número de recepción** (f
 ## Límites actuales (honestos)
 - **No probado con Retell real.** Se verificó con un Retell simulado. Los nombres de campos de la API de Retell (crear modelo y agente, formato de la firma, contenido de las funciones) se escribieron con su documentación pública y **la primera sincronización puede requerir ajustes**.
 - Solo **llamadas entrantes**. Salientes (recordatorios, seguimiento) no están construidas; requieren reglas de consentimiento y horario.
-- La transferencia en vivo no se ha probado con una llamada real (requiere número); la forma de la herramienta fue aceptada por la API de Retell.
+- La transferencia es **en frío por SIP REFER**: Retell le pide a la línea que reenvíe la llamada, sin troncal de salida. La asistida (llamada nueva por la salida) la rechazaba el 403 de DIDWW. En DIDWW, la troncal de entrada necesita «Máx. transferencias» ≥ 1. No avisa a quien contesta ni vuelve al asistente si nadie contesta. Pendiente de probar con una llamada real tras este cambio.
 - No se guarda la grabación de audio.
 - Costos: Retell y la línea cobran por minuto; revisa sus tarifas.
 - La IA de las llamadas la pone Retell (su modelo), no la de OpenRouter.
