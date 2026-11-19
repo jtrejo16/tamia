@@ -226,6 +226,7 @@ function BusinessTab({ config, editable, reload }: TabProps) {
     depositPolicy: b.depositPolicy,
     privacyNoticeUrl: b.privacyNoticeUrl,
     timezone: b.timezone,
+    humanResumeHours: String(b.humanResumeHours),
   });
   const [human, setHuman] = useState<Record<string, [string, string] | null>>(
     () =>
@@ -254,6 +255,7 @@ function BusinessTab({ config, editable, reload }: TabProps) {
       depositPolicy: f.depositPolicy,
       privacyNoticeUrl: f.privacyNoticeUrl,
       timezone: f.timezone,
+      humanResumeHours: Number(f.humanResumeHours),
       humanHours: human,
     });
   }
@@ -308,6 +310,13 @@ function BusinessTab({ config, editable, reload }: TabProps) {
             );
           })}
         </div>
+        <Field label="Devolver al asistente si nadie contesta" hint="Si el cliente fue pasado a una persona y el equipo lleva este tiempo sin escribirle, el asistente vuelve a contestar cuando el cliente escriba de nuevo. “Nunca” lo deja esperando a una persona.">
+          <select className={cx(field, "max-w-[12rem]")} value={f.humanResumeHours} onChange={set("humanResumeHours")} disabled={!editable}>
+            {[[1, "1 hora"], [2, "2 horas"], [4, "4 horas"], [8, "8 horas"], [12, "12 horas"], [24, "24 horas"], [0, "Nunca"]].map(([v, l]) => (
+              <option key={v} value={String(v)}>{l}</option>
+            ))}
+          </select>
+        </Field>
       </Card>
 
       <NoticeBox notice={saver.notice} />

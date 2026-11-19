@@ -50,6 +50,8 @@ export interface TenantProfile {
   cancellationPolicy?: string;
   /** Horas minimas de aviso para cancelar/reprogramar sin pasar por un humano. */
   cancellationNoticeHours?: number;
+  /** Horas sin respuesta del equipo tras las que el asistente retoma una conversacion escalada. 0 = nunca. Por defecto 4. */
+  humanResumeHours?: number;
   depositPolicy?: string;
 }
 

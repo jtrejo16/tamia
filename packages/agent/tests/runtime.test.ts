@@ -7,6 +7,7 @@ import {
   conversations,
   handoffs,
   messages,
+  tenants,
   usageEvents,
 } from "@empleado/db";
 import { LLMError } from "@empleado/llm";
@@ -254,6 +255,41 @@ describe("niveles de autonomia", () => {
   });
 });
 
+describe("el asistente retoma una conversacion que el equipo no atendio", () => {
+  const HOUR = 3_600_000;
+  /** Escala en NOW y fija todas las marcas de tiempo en NOW (la base usa el reloj real). */
+  async function escalated(profile?: Record<string, unknown>) {
+    const w = await world();
+    if (profile) await dbs.owner.db.update(tenants).set({ profile: { cancellationNoticeHours: 12, ...profile } }).where(eq(tenants.id, w.tenantId));
+    await turn(w, new FakeLLM([{ tools: [{ name: "escalar_a_humano", args: { motivo: "Quiere hablar con alguien", urgencia: "alta" } }] }, { text: "Le paso tu mensaje." }]), "quiero hablar con una persona");
+    await dbs.owner.db.update(handoffs).set({ createdAt: NOW, updatedAt: NOW }).where(eq(handoffs.conversationId, w.conversationId));
+    await dbs.owner.db.update(messages).set({ createdAt: NOW }).where(and(eq(messages.conversationId, w.conversationId), eq(messages.direction, "out")));
+    return w;
+  }
+  const at = (h: number) => ({ now: new Date(NOW.getTime() + h * HOUR) });
+
+  it("antes del plazo sigue esperando a una persona; pasado el plazo contesta el asistente y cierra la escalada", async () => {
+    const w = await escalated();
+    const early = new FakeLLM([{ text: "no deberia llamarse" }]);
+    expect(await turn(w, early, "¿hay alguien?", at(2))).toMatchObject({ action: "none", reason: "human_has_control" });
+    expect(early.requests).toHaveLength(0);
+
+    const late = await turn(w, new FakeLLM([{ text: "Disculpa la espera, ¿en qué te ayudo?" }]), "sigo esperando", at(5));
+    expect(late.action).toBe("send");
+    const [conv] = await dbs.owner.db.select().from(conversations).where(eq(conversations.id, w.conversationId));
+    expect(conv).toMatchObject({ state: "bot", assignedUserId: null });
+    const [h] = await dbs.owner.db.select().from(handoffs).where(eq(handoffs.conversationId, w.conversationId));
+    expect(h?.resolvedAt).not.toBeNull();
+  });
+
+  it("si el negocio eligio “nunca”, o el plazo es mas largo, no retoma", async () => {
+    const never = await escalated({ humanResumeHours: 0 });
+    expect(await turn(never, new FakeLLM([{ text: "x" }]), "hola", at(48))).toMatchObject({ action: "none", reason: "human_has_control" });
+    const long = await escalated({ humanResumeHours: 24 });
+    expect(await turn(long, new FakeLLM([{ text: "x" }]), "hola", at(10))).toMatchObject({ action: "none", reason: "human_has_control" });
+  });
+});
+
 describe("escalamiento y robustez", () => {
   it("escalar pausa al bot, crea el handoff y el siguiente mensaje ya no llama al modelo", async () => {
     const w = await world();
@@ -272,7 +308,8 @@ describe("escalamiento y robustez", () => {
     expect(hand[0]).toMatchObject({ urgency: "alta", reason: "Tiene un dolor muy fuerte" });
 
     const llm2 = new FakeLLM([{ text: "no deberia llamarse" }]);
-    const again = await turn(w, llm2, "¿hay alguien?");
+    // Las marcas de la base usan el reloj real: el segundo mensaje llega "justo despues" (si no, el plazo de retomar ya habria pasado).
+    const again = await turn(w, llm2, "¿hay alguien?", { now: new Date() });
     expect(again).toMatchObject({ action: "none", reason: "human_has_control" });
     expect(llm2.requests).toHaveLength(0);
     const inbound = await dbs.owner.db

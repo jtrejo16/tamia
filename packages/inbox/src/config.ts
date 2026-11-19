@@ -59,6 +59,7 @@ export const businessSchema = z.object({
   keyFacts: list(12),
   cancellationPolicy: optText(300),
   cancellationNoticeHours: z.number().int().min(0).max(168),
+  humanResumeHours: z.number().int().min(0).max(168).optional(),
   depositPolicy: optText(300),
   privacyNoticeUrl: httpsUrl,
   timezone: z.string().refine(validTimezone, "Zona horaria no válida (por ejemplo America/Merida)"),
@@ -164,6 +165,7 @@ export interface ConfigSnapshot {
     keyFacts: string[];
     cancellationPolicy: string;
     cancellationNoticeHours: number;
+    humanResumeHours: number;
     depositPolicy: string;
     privacyNoticeUrl: string;
     timezone: string;
@@ -237,6 +239,7 @@ export async function getConfig(db: Database, ctx: PanelContext, now: Date = new
       keyFacts: p.keyFacts ?? [],
       cancellationPolicy: p.cancellationPolicy ?? "",
       cancellationNoticeHours: p.cancellationNoticeHours ?? 12,
+      humanResumeHours: p.humanResumeHours ?? 4,
       depositPolicy: p.depositPolicy ?? "",
       privacyNoticeUrl: tenant.privacyNoticeUrl ?? "",
       timezone: tenant.timezone,
@@ -315,6 +318,7 @@ export async function updateBusiness(db: Database, ctx: PanelContext, input: unk
     keyFacts: d.keyFacts,
     ...(d.cancellationPolicy ? { cancellationPolicy: d.cancellationPolicy } : {}),
     cancellationNoticeHours: d.cancellationNoticeHours,
+    humanResumeHours: d.humanResumeHours ?? 4,
     ...(d.depositPolicy ? { depositPolicy: d.depositPolicy } : {}),
   };
   return withTenant(db, scopeOf(ctx), async (tx) => {

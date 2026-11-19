@@ -22,7 +22,7 @@ import {
   type ChatMessage,
   type LLMProvider,
 } from "@empleado/llm";
-import { and, count, desc, eq, gt, gte } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, isNull } from "drizzle-orm";
 import { formatLocal, toPlainText, toWhatsAppText } from "./format";
 import { claimsHandoff } from "./handoff-claim";
 import { MAX_RAW_HISTORY, maybeSummarize, messageText } from "./memory";
@@ -153,6 +153,35 @@ async function isUnansweredRetry(tx: Tx, channelId: string, conversationId: stri
   return !handoff;
 }
 
+const DEFAULT_RESUME_HOURS = 4;
+
+/**
+ * Conversacion escalada a una persona que nadie atendio: si el equipo lleva `hours` horas sin escribirle al cliente
+ * (ni tomar el control), el asistente retoma la conversacion cuando el cliente vuelve a escribir.
+ * Se mide desde lo ultimo que hizo el equipo: su ultimo mensaje, o el aviso de escalada. 0 = nunca.
+ */
+async function resumeIfTeamSilent(tx: Tx, hours: number, conversationId: string, now: Date): Promise<boolean> {
+  if (hours <= 0) return false;
+  const [lastOut] = await tx
+    .select({ at: messages.createdAt })
+    .from(messages)
+    .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "out")))
+    .orderBy(desc(messages.createdAt))
+    .limit(1);
+  const [lastHandoff] = await tx
+    .select({ at: handoffs.updatedAt })
+    .from(handoffs)
+    .where(and(eq(handoffs.conversationId, conversationId), isNull(handoffs.resolvedAt)))
+    .orderBy(desc(handoffs.updatedAt))
+    .limit(1);
+  const last = Math.max(lastOut?.at.getTime() ?? 0, lastHandoff?.at.getTime() ?? 0);
+  if (last === 0 || now.getTime() - last < hours * 3_600_000) return false;
+
+  await tx.update(conversations).set({ state: "bot", assignedUserId: null, updatedAt: now }).where(eq(conversations.id, conversationId));
+  await tx.update(handoffs).set({ resolvedAt: now, updatedAt: now }).where(and(eq(handoffs.conversationId, conversationId), isNull(handoffs.resolvedAt)));
+  return true;
+}
+
 /** Procesa UN mensaje entrante y decide que hacer con la respuesta. */
 export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
   const { db, llm, tenantId, conversationId } = input;
@@ -205,7 +234,12 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
       })
       .where(eq(conversations.id, conversationId));
 
-    if (conversation.state === "human") return { humanControl: true as const };
+    if (conversation.state === "human") {
+      if (!(await resumeIfTeamSilent(tx, tenant.profile?.humanResumeHours ?? DEFAULT_RESUME_HOURS, conversationId, now))) {
+        return { humanControl: true as const };
+      }
+      conversation.state = "bot";
+    }
     if (input.agentDisabledReason) return { disabled: true as const };
 
     const [{ n: inboundCount } = { n: 1 }] = await tx
