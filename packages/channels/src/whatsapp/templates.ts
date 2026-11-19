@@ -54,6 +54,49 @@ export const REMINDER_TEMPLATES: Record<ReminderKind, TemplateDefinition> = {
   },
 };
 
+/**
+ * Aviso al EQUIPO cuando una conversacion necesita a una persona. Se manda desde el numero del negocio al WhatsApp del
+ * equipo. Meta no admite una variable al inicio ni al final del texto, por eso cierra con "Gracias.".
+ * Variables: 1 negocio, 2 cliente, 3 canal, 4 motivo, 5 enlace a la conversacion.
+ */
+export const STAFF_ALERT_TEMPLATE: TemplateDefinition = {
+  name: "aviso_atencion_humana",
+  language: "es_MX",
+  category: "UTILITY",
+  body: "Aviso de {{1}}: {{2}} escribió por {{3}} y necesita que una persona lo atienda. Motivo: {{4}}. Abre la conversación aquí: {{5}} Gracias.",
+  examples: ["Estética Luna", "Laura Méndez", "WhatsApp", "pidió hablar con una persona", "https://app.tamia.com.mx/bandeja?c=0000"],
+  quickReplies: [],
+};
+
+export const staffAlertParamList = (p: { business: string; customer: string; channel: string; reason: string; url: string }): string[] => [
+  oneLine(p.business, 60),
+  oneLine(p.customer, 60),
+  oneLine(p.channel, 20),
+  oneLine(p.reason, 160),
+  p.url,
+];
+
+/**
+ * Solicitud de resena despues de la cita. Texto NEUTRO a proposito: pedir la resena solo a quien quedo contento, o dar
+ * algo a cambio, va contra las reglas de Google. Variables: 1 cliente, 2 negocio, 3 enlace.
+ */
+export const REVIEW_REQUEST_TEMPLATE: TemplateDefinition = {
+  name: "solicitud_resena",
+  language: "es_MX",
+  category: "UTILITY",
+  body: "Hola {{1}}, gracias por tu visita a {{2}} y por elegirnos. Tu opinión nos ayuda a mejorar y a que más personas nos conozcan: ¿nos dejas una reseña? Solo toma un minuto: {{3}} ¡Gracias!",
+  examples: ["Laura", "Estética Luna", "https://g.page/r/ejemplo/review"],
+  quickReplies: [],
+};
+
+export const reviewParamList = (p: { customer: string; business: string; url: string }): string[] => [oneLine(p.customer, 40), oneLine(p.business, 60), p.url];
+
+/** Meta no admite saltos de linea, tabulaciones ni mas de 4 espacios seguidos dentro de una variable. */
+export function oneLine(text: string, max: number): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  return (clean.length > max ? clean.slice(0, max - 1).trimEnd() + "…" : clean) || "—";
+}
+
 export const reminderParamList = (p: ReminderParams): string[] => [p.customerName, p.service, p.when, p.business];
 
 /** El texto tal como lo ve el cliente (para mostrarlo en el panel y en el historial). */
@@ -69,10 +112,9 @@ export function toMetaTemplate(def: TemplateDefinition) {
     category: def.category,
     components: [
       { type: "BODY", text: def.body, example: { body_text: [def.examples] } },
-      {
-        type: "BUTTONS",
-        buttons: def.quickReplies.map((text) => ({ type: "QUICK_REPLY", text })),
-      },
+      ...(def.quickReplies.length > 0
+        ? [{ type: "BUTTONS", buttons: def.quickReplies.map((text) => ({ type: "QUICK_REPLY", text })) }]
+        : []),
     ],
   };
 }

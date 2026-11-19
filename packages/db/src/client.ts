@@ -110,6 +110,18 @@ export async function dueReminders(
   return rows.map((r) => ({ tenantId: r.tenant_id, appointmentId: r.appointment_id, kind: r.kind }));
 }
 
+/** Escalaciones que toca avisar al equipo (de negocios con avisos encendidos). Solo ids; el worker abre cada negocio. */
+export async function handoffsToNotify(db: Database, limit = 50): Promise<Array<{ tenantId: string; handoffId: string }>> {
+  const rows = await db.execute<{ tenant_id: string; handoff_id: string }>(sql`select * from handoffs_to_notify(${limit})`);
+  return rows.map((r) => ({ tenantId: r.tenant_id, handoffId: r.handoff_id }));
+}
+
+/** Citas a las que toca pedirles resena (de negocios con la funcion encendida). Solo ids. */
+export async function reviewsDue(db: Database, now: Date, limit = 50): Promise<Array<{ tenantId: string; appointmentId: string }>> {
+  const rows = await db.execute<{ tenant_id: string; appointment_id: string }>(sql`select * from reviews_due(${now.toISOString()}::timestamptz, ${limit})`);
+  return rows.map((r) => ({ tenantId: r.tenant_id, appointmentId: r.appointment_id }));
+}
+
 /** Canales cuyas plantillas hay que sincronizar con Meta. */
 export async function channelsForTemplateSync(db: Database): Promise<Array<{ tenantId: string; channelId: string }>> {
   const rows = await db.execute<{ tenant_id: string; channel_id: string }>(sql`select * from channels_for_template_sync()`);

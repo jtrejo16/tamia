@@ -1,6 +1,8 @@
 import {
   GraphAdminClient,
   REMINDER_TEMPLATES,
+  REVIEW_REQUEST_TEMPLATE,
+  STAFF_ALERT_TEMPLATE,
   WhatsAppApiError,
   type RemoteTemplate,
   type TemplateDefinition,
@@ -94,6 +96,12 @@ async function prepare(
   };
 }
 
+/** Componentes tal como se muestran en el panel (los botones solo si la plantilla los tiene). */
+const componentsOf = (def: TemplateDefinition) => [
+  { type: "BODY", text: def.body },
+  ...(def.quickReplies.length > 0 ? [{ type: "BUTTONS", buttons: def.quickReplies }] : []),
+];
+
 const lowerCategory = (c: string): "utility" | "marketing" | "authentication" =>
   c.toUpperCase() === "MARKETING" ? "marketing" : c.toUpperCase() === "AUTHENTICATION" ? "authentication" : "utility";
 
@@ -164,6 +172,7 @@ export async function createReminderTemplates(
   db: Database,
   deps: TemplateGraphDeps,
   ctx: PanelContext,
+  defs: TemplateDefinition[] = Object.values(REMINDER_TEMPLATES) as TemplateDefinition[],
 ): Promise<Success<{ created: string[]; existing: string[] }> | (Failure<TemplateError> & { details?: string })> {
   if (!can(ctx.role, "configure")) return fail("forbidden");
   const prepared = await prepare(db, deps, ctx.tenantId);
@@ -176,7 +185,7 @@ export async function createReminderTemplates(
 
     const created: string[] = [];
     const existing: string[] = [];
-    for (const def of Object.values(REMINDER_TEMPLATES) as TemplateDefinition[]) {
+    for (const def of defs) {
       if (have.has(`${def.name}|${def.language}`)) {
         existing.push(def.name);
         continue;
@@ -191,7 +200,7 @@ export async function createReminderTemplates(
             name: def.name,
             language: def.language,
             category: "utility",
-            components: [{ type: "BODY", text: def.body }, { type: "BUTTONS", buttons: def.quickReplies }],
+            components: componentsOf(def),
             status: result.status,
             metaTemplateId: result.id,
           })
@@ -201,10 +210,10 @@ export async function createReminderTemplates(
     }
     // Guarda el texto de las que ya existian en Meta, para poder mostrarlas.
     await withTenant(db, { tenantId: ctx.tenantId }, async (tx) => {
-      for (const def of Object.values(REMINDER_TEMPLATES) as TemplateDefinition[]) {
+      for (const def of defs) {
         await tx
           .update(templates)
-          .set({ components: [{ type: "BODY", text: def.body }, { type: "BUTTONS", buttons: def.quickReplies }] })
+          .set({ components: componentsOf(def) })
           .where(and(eq(templates.channelId, prepared.channelId), eq(templates.name, def.name), eq(templates.language, def.language)));
       }
     });
@@ -212,4 +221,9 @@ export async function createReminderTemplates(
   } catch (error) {
     return metaFailure(error);
   }
+}
+
+/** Crea (si faltan) las plantillas de una funcion: "avisos" (aviso al equipo) o "resenas" (solicitud de resena). */
+export function createFeatureTemplate(db: Database, deps: TemplateGraphDeps, ctx: PanelContext, feature: "avisos" | "resenas") {
+  return createReminderTemplates(db, deps, ctx, [feature === "avisos" ? STAFF_ALERT_TEMPLATE : REVIEW_REQUEST_TEMPLATE]);
 }

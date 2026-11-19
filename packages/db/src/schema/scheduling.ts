@@ -13,6 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { bytea, pk, tenantRef, timestamps } from "./core";
+import { jsonb } from "drizzle-orm/pg-core";
 import { contacts, conversations } from "./channels";
 
 export const appointmentStatusEnum = pgEnum("appointment_status", [
@@ -107,6 +108,8 @@ export const appointments = pgTable(
     calendarEventId: text("calendar_event_id"),
     /** Ultima vez que esta cita se reflejo en el calendario externo (Google). Si es anterior a updated_at, hay que sincronizarla. */
     calendarSyncedAt: timestamp("calendar_synced_at", { withTimezone: true }),
+    /** Cuando se le pidio al cliente su resena por esta cita (una sola vez por cita). */
+    reviewRequestedAt: timestamp("review_requested_at", { withTimezone: true }),
     reminder24hSentAt: timestamp("reminder_24h_sent_at", { withTimezone: true }),
     reminder2hSentAt: timestamp("reminder_2h_sent_at", { withTimezone: true }),
     confirmedByContact: boolean("confirmed_by_contact").notNull().default(false),
@@ -137,5 +140,40 @@ export const calendarConnections = pgTable("calendar_connections", {
   status: text("status").notNull().default("active"),
   lastError: text("last_error"),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  ...timestamps,
+});
+
+/** Destinatario de los avisos del negocio: un numero de WhatsApp o un correo. */
+export interface NotificationRecipient {
+  id: string;
+  kind: "whatsapp" | "email";
+  /** "+521999..." (WhatsApp) o correo. */
+  address: string;
+  enabled: boolean;
+}
+
+/**
+ * Avisos al equipo cuando una conversacion necesita a una persona (la pide el cliente, urgencia o queja).
+ * mode: "business_hours" = solo en horario de atencion humana; "always" = a cualquier hora.
+ */
+export const notificationSettings = pgTable("notification_settings", {
+  id: pk(),
+  tenantId: tenantRef().unique(),
+  enabled: boolean("enabled").notNull().default(false),
+  mode: text("mode").notNull().default("business_hours"),
+  recipients: jsonb("recipients").$type<NotificationRecipient[]>().notNull().default([]),
+  ...timestamps,
+});
+
+/** Solicitud de resena despues de la cita (por WhatsApp). platform: google | facebook | other. */
+export const reviewSettings = pgTable("review_settings", {
+  id: pk(),
+  tenantId: tenantRef().unique(),
+  enabled: boolean("enabled").notNull().default(false),
+  hoursAfter: integer("hours_after").notNull().default(3),
+  platform: text("platform").notNull().default("google"),
+  url: text("url"),
+  /** Desde cuando esta activa: solo se pide resena de citas que terminan DESPUES (no de las ya pasadas). */
+  enabledAt: timestamp("enabled_at", { withTimezone: true }),
   ...timestamps,
 });

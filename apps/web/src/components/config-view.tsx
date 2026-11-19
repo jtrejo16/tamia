@@ -11,9 +11,10 @@ import { SocialTab } from "./social-view";
 import { VoiceTab } from "./voice-view";
 import { CalendarTab } from "./calendar-view";
 import { UsersTab } from "./users-view";
+import { NotificationsTab, ReviewsTab } from "./features-view";
 
 type Config = Serialized<ConfigSnapshot>;
-type Tab = "negocio" | "asistente" | "servicios" | "equipo" | "horarios" | "conocimiento" | "plantillas" | "whatsapp" | "redes" | "llamadas" | "calendario" | "usuarios";
+type Tab = "negocio" | "asistente" | "servicios" | "equipo" | "horarios" | "conocimiento" | "plantillas" | "whatsapp" | "redes" | "llamadas" | "calendario" | "avisos" | "resenas" | "usuarios";
 
 const TABS: Array<{ id: Tab; label: string; ownerOnly?: boolean }> = [
   { id: "negocio", label: "Negocio" },
@@ -26,6 +27,8 @@ const TABS: Array<{ id: Tab; label: string; ownerOnly?: boolean }> = [
   { id: "redes", label: "Messenger e Instagram" },
   { id: "llamadas", label: "Llamadas" },
   { id: "calendario", label: "Calendario" },
+  { id: "avisos", label: "Avisos" },
+  { id: "resenas", label: "Reseñas" },
   { id: "plantillas", label: "Plantillas" },
   { id: "usuarios", label: "Usuarios", ownerOnly: true },
 ];
@@ -172,6 +175,10 @@ export function ConfigView() {
           <VoiceTab editable={editable} />
         ) : tab === "calendario" ? (
           <CalendarTab editable={editable} />
+        ) : tab === "avisos" ? (
+          <NotificationsTab editable={editable} />
+        ) : tab === "resenas" ? (
+          <ReviewsTab editable={editable} />
         ) : tab === "usuarios" && editable ? (
           <UsersTab />
         ) : error && !config ? (

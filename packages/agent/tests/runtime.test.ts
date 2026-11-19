@@ -644,6 +644,22 @@ describe("memoria", () => {
   });
 });
 
+describe("telefono obligatorio para agendar", () => {
+  it("sin telefono (Messenger, Instagram o llamada oculta) no agenda: lo pide y, una vez guardado, sigue", async () => {
+    const w = await world();
+    await dbs.owner.db.update(contacts).set({ phoneE164: null }).where(eq(contacts.id, w.contactId));
+    const r = await turn(w, new FakeLLM([{ tools: [book(w)] }, { text: "¿Me das tu WhatsApp?" }]), "quiero una cita");
+    expect(r.toolTrace[0]?.result).toMatchObject({ error: "faltan_datos", faltan: [expect.stringMatching(/teléfono/)] });
+    expect(String((r.toolTrace[0]?.result as Record<string, unknown>).instruccion)).toMatch(/guardar_datos_contacto/);
+    expect(await allAppointments(w)).toHaveLength(0);
+
+    // Ya con el telefono guardado, el mismo flujo avanza hasta el resumen para confirmar.
+    const saved = await turn(w, new FakeLLM([{ tools: [{ name: "guardar_datos_contacto", args: { telefono: "9991234567" } }, book(w)] }, { text: "Te confirmo la cita." }]), "mi número es 9991234567");
+    expect(saved.toolTrace[0]?.result).toMatchObject({ ok: true });
+    expect(saved.toolTrace[1]?.result).toMatchObject({ requiere_confirmacion: true });
+  });
+});
+
 describe("citas duplicadas entre medios", () => {
   const mkAppt = (w: World, contactId: string, startsAt: Date) =>
     dbs.owner.db.insert(appointments).values({

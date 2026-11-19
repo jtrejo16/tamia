@@ -104,6 +104,10 @@ export const handoffs = pgTable("handoffs", {
   summary: text("summary"),
   /** assistant = el asistente decidio escalar; system = fallo tecnico del asistente (no decidio nada). */
   source: text("source").notNull().default("assistant"),
+  /** Por que se escalo: pidio_persona | urgencia | queja | otro | sistema. Decide si se avisa al equipo. */
+  kind: text("kind").notNull().default("otro"),
+  /** Intentos de avisar al equipo (para no insistir sin fin si falla). */
+  notifyAttempts: integer("notify_attempts").notNull().default(0),
   notifiedAt: timestamp("notified_at", { withTimezone: true }),
   takenBy: uuid("taken_by").references(() => users.id, { onDelete: "set null" }),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),

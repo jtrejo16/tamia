@@ -1,6 +1,6 @@
 import { SocialClient, WhatsAppClient } from "@empleado/channels";
 import { createDb, type DbHandle } from "@empleado/db";
-import { MercadoPagoClient, reconcileSubscriptions, syncAppointmentsToGoogle } from "@empleado/inbox";
+import { MercadoPagoClient, emailDepsFromEnv, reconcileSubscriptions, syncAppointmentsToGoogle } from "@empleado/inbox";
 import { createLLMProvider, type LLMProvider } from "@empleado/llm";
 import type { Redis } from "ioredis";
 import { loadChannelAccess } from "./channel-access";
@@ -9,7 +9,9 @@ import { RedisLock } from "./lock";
 import { sweepStaleMessages } from "./outbox";
 import { createInboundProcessor } from "./processors/inbound";
 import { createOutboundProcessor, type Sender } from "./processors/outbound";
+import { createNotificationScanner } from "./processors/notifications";
 import { createReminderScanner } from "./processors/reminders";
+import { createReviewScanner } from "./processors/reviews";
 import { createStatusProcessor } from "./processors/status";
 import { createTemplateSync } from "./processors/template-sync";
 import { RedisRateLimiter } from "./ratelimit";
@@ -137,6 +139,36 @@ export function startSystem(config: WorkerConfig, system: WorkerSystem): () => v
       });
   }, 60_000);
 
+  // Avisos al equipo (alguien pide una persona) y solicitudes de resena tras la cita: se revisan cada minuto.
+  const email = emailDepsFromEnv(process.env);
+  const scanNotifications = createNotificationScanner({
+    db: db.db,
+    key: config.encryptionKey,
+    makeSender,
+    email,
+    baseUrl: process.env.PUBLIC_BASE_URL?.trim() || null,
+    log,
+  });
+  const scanReviews = createReviewScanner({ db: db.db, enqueueOutbound: enqueue.outbound, log });
+  let scanningExtras = false;
+  const extras = setInterval(() => {
+    if (scanningExtras) return;
+    scanningExtras = true;
+    Promise.all([
+      scanNotifications().then((r) => r.sent + r.errors > 0 && log("notifications.scan", r)),
+      scanReviews().then((r) => {
+        if (r.sent + r.errors > 0) {
+          log("reviews.scan", r);
+          notify();
+        }
+      }),
+    ])
+      .catch((e) => log("extras.scan_error", { error: e instanceof Error ? e.message : String(e) }))
+      .finally(() => {
+        scanningExtras = false;
+      });
+  }, 60_000);
+
   // Estado de las plantillas en Meta: al arrancar y cada 10 minutos.
   const syncTemplatesNow = createTemplateSync({
     db: db.db,
@@ -196,6 +228,7 @@ export function startSystem(config: WorkerConfig, system: WorkerSystem): () => v
     clearInterval(sweep);
     clearInterval(heartbeat);
     clearInterval(reminders);
+    clearInterval(extras);
     clearInterval(templateSync);
     clearTimeout(reconcileStart);
     clearInterval(reconcileTimer);

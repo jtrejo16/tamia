@@ -361,7 +361,7 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
       await forceEscalation(ctx, "Falla del asistente (no fue su decisión): el modelo de IA no generó ninguna respuesta.");
     } else if (!ctx.escalated && claimsHandoff(finalText)) {
       // Le dijo al cliente que una persona lo atendera, pero nunca llamo a escalar_a_humano: se escala de verdad.
-      await forceEscalation(ctx, "Escalación automática: el asistente le dijo al cliente que una persona lo atendería, pero no había escalado la conversación. Revisa qué necesita el cliente.");
+      await forceEscalation(ctx, "Escalación automática: el asistente le dijo al cliente que una persona lo atendería, pero no había escalado la conversación. Revisa qué necesita el cliente.", "pidio_persona");
     }
   } catch (error) {
     failure = error instanceof LLMError ? `llm_${error.status ?? "red"}` : "error_inesperado";
@@ -466,6 +466,6 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
 }
 
 /** Falla tecnica: el asistente NO decidio escalar. Se marca como "system" para que quien lo reciba lo sepa. */
-async function forceEscalation(ctx: TurnContext, reason: string): Promise<void> {
-  await recordEscalation(ctx, { motivo: reason, urgencia: "normal", source: "system" });
+async function forceEscalation(ctx: TurnContext, reason: string, kind?: "pidio_persona"): Promise<void> {
+  await recordEscalation(ctx, { motivo: reason, urgencia: "normal", source: "system", ...(kind ? { kind } : {}) });
 }

@@ -204,7 +204,7 @@ export async function makeAppointment(
     startsAt: Date;
     /** Cuando se agendo la cita (por defecto, hace mucho: asi aplica el recordatorio de 24 h). */
     createdAt?: Date;
-    status?: "pending" | "confirmed" | "cancelled";
+    status?: "pending" | "confirmed" | "cancelled" | "no_show" | "done";
     templates?: "approved" | "pending" | "none";
     contactId?: string;
   },

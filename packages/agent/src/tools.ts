@@ -317,6 +317,10 @@ const schemas = {
       .optional()
       .describe("Contexto para la persona que tomará la conversación: qué quiere el cliente, qué datos ya dio y qué ya hiciste. 1 a 3 frases."),
     urgencia: z.enum(["normal", "alta"]).default("normal"),
+    tipo: z
+      .enum(["pidio_persona", "urgencia", "queja", "otro"])
+      .default("otro")
+      .describe("Por qué escalas: pidio_persona = el cliente pidió hablar con una persona o con alguien del equipo; urgencia = urgencia o emergencia; queja = está molesto o se queja; otro = no sabes responder o es otro caso. Esto decide si se avisa al equipo."),
   }),
 } as const;
 
@@ -489,6 +493,16 @@ export const TOOLS: ToolTable = {
           error: "faltan_datos",
           faltan: ["nombre completo"],
           instruccion: "Pide el nombre completo del cliente y guárdalo con guardar_datos_contacto antes de agendar.",
+        };
+      }
+      // Sin telefono no hay recordatorios ni solicitud de resena (ambos salen por WhatsApp): quien escribe por Messenger o
+      // Instagram, o llama con numero oculto, debe darlo ANTES de agendar. Por llamada o WhatsApp ya viene del canal.
+      if (!ctx.contact.phoneE164) {
+        return {
+          error: "faltan_datos",
+          faltan: ["teléfono de WhatsApp a 10 dígitos"],
+          instruccion:
+            "Antes de agendar pídele su número de WhatsApp a 10 dígitos (lada + número) y dile que es para mandarle los recordatorios de su cita. Guárdalo con guardar_datos_contacto (campo telefono) y luego continúa.",
         };
       }
       const tz = ctx.tenant.timezone;
@@ -790,10 +804,10 @@ export const TOOLS: ToolTable = {
   escalar_a_humano: {
     name: "escalar_a_humano",
     description:
-      "Pasa la conversación a una persona del equipo y pausa al asistente. Úsala ante quejas, urgencias, descuentos, facturas, dudas que no puedas resolver con datos reales, o si el cliente lo pide.",
+      "Pasa la conversación a una persona del equipo y pausa al asistente. Úsala ante quejas, urgencias, descuentos, facturas, dudas que no puedas resolver con datos reales, o si el cliente lo pide. Indica siempre el tipo (pidio_persona, urgencia, queja u otro).",
     mutating: false,
     async execute(args, ctx) {
-      return recordEscalation(ctx, { motivo: args.motivo, resumen: args.resumen, urgencia: args.urgencia, source: "assistant" });
+      return recordEscalation(ctx, { motivo: args.motivo, resumen: args.resumen, urgencia: args.urgencia, kind: args.tipo, source: "assistant" });
     },
   },
 };
@@ -820,7 +834,7 @@ async function customerRecap(tx: Tx, conversationId: string): Promise<string | n
  */
 export async function recordEscalation(
   ctx: TurnContext,
-  input: { motivo: string; resumen?: string; urgencia: "normal" | "alta"; source: "assistant" | "system" },
+  input: { motivo: string; resumen?: string; urgencia: "normal" | "alta"; kind?: "pidio_persona" | "urgencia" | "queja" | "otro" | "sistema"; source: "assistant" | "system" },
 ): Promise<ToolResult> {
   const availability = humanAvailability(ctx.tenant.humanHours, ctx.now, ctx.tenant.timezone);
   await withTenant(ctx.db, { tenantId: ctx.tenantId }, async (tx) => {
@@ -836,6 +850,7 @@ export async function recordEscalation(
         reason: input.motivo,
         summary,
         source: input.source,
+        kind: input.kind ?? (input.source === "system" ? "sistema" : "otro"),
         urgency: input.urgencia,
         notifiedAt: null, // lo toma el servicio de notificaciones (paso de bandeja)
       });
