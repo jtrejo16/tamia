@@ -195,6 +195,8 @@ export async function connectGoogleCalendar(
   try {
     exchanged = await exchangeGoogleCode(deps, input);
   } catch (e) {
+    // Solo el motivo que da Google (por ejemplo invalid_client = secreto equivocado, invalid_grant = codigo repetido o vencido). Nunca claves.
+    if (isGoogleError(e)) console.error(`[google-calendar] Google respondio ${e.status}: ${e.code ?? "sin codigo"} - ${e.message}`);
     if (isGoogleError(e)) {
       if (e.code === "no_refresh_token") return fail("no_refresh_token");
       if (e.status === 0 || e.status >= 500) return fail("google_down");
