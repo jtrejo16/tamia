@@ -64,7 +64,7 @@ export const STAFF_ALERT_TEMPLATE: TemplateDefinition = {
   language: "es_MX",
   category: "UTILITY",
   body: "Aviso de {{1}}: {{2}} escribió por {{3}} y necesita que una persona lo atienda. Motivo: {{4}}. Abre la conversación aquí: {{5}} Gracias.",
-  examples: ["Estética Luna", "Laura Méndez", "WhatsApp", "pidió hablar con una persona", "https://app.tamia.com.mx/bandeja?c=0000"],
+  examples: ["Estética Luna", "Laura Méndez", "WhatsApp", "pidió hablar con una persona", "https://www.jovia.mx/bandeja?c=0000"],
   quickReplies: [],
 };
 

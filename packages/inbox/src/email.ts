@@ -1,7 +1,7 @@
 /**
  * Envio de correos (avisos al equipo, y mas adelante recuperar contraseña). Hoy con Brevo (API REST); el resto del
  * sistema solo conoce `sendEmail`, asi que cambiar de proveedor es cambiar este archivo.
- * Variables de entorno: BREVO_API_KEY, EMAIL_FROM (remitente verificado, p. ej. avisos@tamia.com.mx), EMAIL_FROM_NAME.
+ * Variables de entorno: BREVO_API_KEY, EMAIL_FROM (remitente verificado, p. ej. avisos@jovia.mx), EMAIL_FROM_NAME.
  */
 export interface EmailDeps {
   apiKey: string;

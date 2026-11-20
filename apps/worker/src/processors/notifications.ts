@@ -99,7 +99,7 @@ export function createNotifier(deps: NotifyDeps) {
     const kindLabel = KIND_LABEL[h.kind] ?? (h.urgency === "alta" ? "urgencia" : "necesita atención");
     const detail = (h.summary ?? h.reason ?? "").trim();
     const reason = detail ? `${kindLabel}. ${detail}` : kindLabel;
-    const url = `${(deps.baseUrl ?? "https://app.tamia.com.mx").replace(/\/$/, "")}/bandeja?c=${h.conversationId}`;
+    const url = `${(deps.baseUrl ?? "https://www.jovia.mx").replace(/\/$/, "")}/bandeja?c=${h.conversationId}`;
 
     // Se "reclama" ANTES de enviar: con mas de un worker no se duplica el aviso. Si todo falla, se libera.
     const claimed = await withTenant(deps.db, { tenantId }, (tx) =>

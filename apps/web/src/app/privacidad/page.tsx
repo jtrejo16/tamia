@@ -33,7 +33,7 @@ export default function PrivacyPage() {
     <main className="min-h-screen bg-slate-50">
       <article className="mx-auto max-w-3xl space-y-8 px-4 py-10 sm:px-6 sm:py-14">
         <header className="space-y-2">
-          <p className="text-sm font-medium text-teal-800">Tamia · app.tamia.com.mx</p>
+          <p className="text-sm font-medium text-teal-800">Tamia · www.jovia.mx</p>
           <h1 className="text-3xl font-semibold text-slate-900">Aviso de privacidad</h1>
           <p className="text-sm text-slate-500">Última actualización: {UPDATED}</p>
         </header>

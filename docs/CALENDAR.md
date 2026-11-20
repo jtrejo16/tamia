@@ -16,9 +16,9 @@ Cada negocio conecta **su** Google Calendar desde **Ajustes → Calendario**. De
 
 ## Configuración (una sola vez, la haces tú)
 1. En <https://console.cloud.google.com> crea un proyecto y activa la **Google Calendar API**.
-2. **Pantalla de consentimiento de OAuth**: tipo *Externo*, nombre de la app (por ejemplo Tamia), correo de soporte, dominio `tamia.com.mx`. Agrega el permiso `.../auth/calendar.events`.
+2. **Pantalla de consentimiento de OAuth**: tipo *Externo*, nombre de la app (por ejemplo Tamia), correo de soporte, dominio `jovia.mx`. Agrega el permiso `.../auth/calendar.events`.
 3. **Credenciales → Crear credenciales → ID de cliente de OAuth → Aplicación web**. En **URI de redireccionamiento autorizados** agrega:
-   `https://app.tamia.com.mx/api/calendar/google/callback`
+   `https://www.jovia.mx/api/calendar/google/callback`
    (en local: `http://localhost:3000/api/calendar/google/callback`).
 4. Copia el **ID de cliente** y el **Secreto** y ponlos en las variables de **`web` y `worker`**:
    - `GOOGLE_CLIENT_ID`

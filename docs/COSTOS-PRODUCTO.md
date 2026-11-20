@@ -24,7 +24,7 @@ Fecha del cálculo: 18 de noviembre de 2026. Tipo de cambio usado: **$18 MXN por
 | Concepto | USD/mes | Notas |
 |---|---|---|
 | Railway (web, worker, base de datos, Redis) | ≈ 25–35 | Plan Pro (US$20, incluye US$20 de uso) y cobro por uso: ≈ US$20 por vCPU, US$10 por GB de RAM, US$0.15 por GB de disco y US$0.05 por GB de salida ([fuente](https://docs.railway.com/reference/pricing)). **Revisa tu factura real**; la cifra depende de la memoria que use cada servicio |
-| Dominio `tamia.com.mx` | ≈ 1 | ≈ US$15 al año |
+| Dominio `jovia.mx` | ≈ 1 | ≈ US$15 al año |
 | **Total fijo base** | **≈ 31 (≈ $560 MXN)** | Se cubre con un solo cliente de Esencial |
 | Número telefónico por cliente con llamadas | 5 + 5 de alta | Solo por cada cliente que quiera línea propia (DIDWW) |
 

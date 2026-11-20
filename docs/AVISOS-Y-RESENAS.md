@@ -26,8 +26,8 @@ Para que lleguen los recordatorios y las reseñas hace falta el teléfono del cl
 | Variable | Dónde | Para qué |
 |---|---|---|
 | `BREVO_API_KEY` | web **y** worker | Clave de la API de Brevo (correos) |
-| `EMAIL_FROM` | web **y** worker | Remitente verificado en Brevo, p. ej. `avisos@tamia.com.mx` |
+| `EMAIL_FROM` | web **y** worker | Remitente verificado en Brevo, p. ej. `avisos@jovia.mx` |
 | `EMAIL_FROM_NAME` | worker (opcional) | Nombre del remitente (por defecto «Tamia») |
-| `PUBLIC_BASE_URL` | **worker** y web | Dirección del panel para el enlace de los avisos (`https://app.tamia.com.mx`) |
+| `PUBLIC_BASE_URL` | **worker** y web | Dirección del panel para el enlace de los avisos (`https://www.jovia.mx`) |
 
-Para el correo: crear cuenta en Brevo, verificar el dominio `tamia.com.mx` (registros DNS en Hostinger) y poner la clave. Sin eso, los avisos por correo se omiten y los de WhatsApp siguen funcionando.
+Para el correo: crear cuenta en Brevo, verificar el dominio `jovia.mx` (registros DNS en Hostinger) y poner la clave. Sin eso, los avisos por correo se omiten y los de WhatsApp siguen funcionando.

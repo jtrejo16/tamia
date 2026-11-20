@@ -1,6 +1,5 @@
 import { PLANS, PLAN_IDS, TRIAL_DAYS } from "@empleado/shared/plans";
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getValidSession } from "@/lib/session";
 
@@ -15,22 +14,19 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   robots: { index: true, follow: true },
   openGraph: { title: TITLE, description: DESCRIPTION, type: "website", locale: "es_MX", siteName: "Tamia" },
-  metadataBase: new URL(process.env.PUBLIC_BASE_URL?.trim() || "https://app.tamia.com.mx"),
+  metadataBase: new URL(process.env.PUBLIC_BASE_URL?.trim() || "https://www.jovia.mx"),
   alternates: { canonical: "/" },
 };
 
 /**
- * Inicio publico. Con sesion va directo al panel. Sin sesion se ve la portada (con www.tamia.com.mx redirigiendo aqui,
- * o en su propio dominio si algun dia se agrega): el login y el registro estan a un clic.
+ * Inicio publico (www.jovia.mx). Con sesion va directo al panel. Sin sesion se ve la portada: el login y el registro estan a un clic.
  */
 export default async function Landing() {
-  const host = ((await headers()).get("x-forwarded-host") ?? (await headers()).get("host") ?? "").toLowerCase();
   if (await getValidSession()) redirect("/bandeja");
 
-  // Si la portada se sirve desde www.<dominio>, la cuenta y el panel viven en app.<dominio>; en cualquier otro host se usan rutas relativas.
-  const app = host.startsWith("www.") ? `https://app.${host.slice(4)}` : "";
-  const signup = `${app}/registro`;
-  const login = `${app}/login`;
+  // La portada, la cuenta y el panel viven en el mismo dominio: rutas relativas.
+  const signup = "/registro";
+  const login = "/login";
 
   return (
     <div className="min-h-full bg-white text-slate-900">
