@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 
 // Pagina PUBLICA (sin sesion): Meta, Google y Mercado Pago piden una direccion publica de la politica de privacidad.
 export const metadata: Metadata = {
-  title: "Aviso de privacidad · Tamia",
-  description: "Cómo Tamia trata los datos de los negocios que la usan y de las personas que les escriben o llaman.",
+  title: "Aviso de privacidad · Jovia",
+  description: "Cómo Jovia trata los datos de los negocios que la usan y de las personas que les escriben o llaman.",
   robots: { index: true, follow: true },
 };
 
@@ -22,38 +22,38 @@ const Li = ({ children }: { children: React.ReactNode }) => <li className="ml-5 
 
 export default function PrivacyPage() {
   const email = process.env.PRIVACY_CONTACT_EMAIL?.trim();
-  const legalName = process.env.LEGAL_NAME?.trim() || "Tamia";
+  const legalName = process.env.LEGAL_NAME?.trim() || "Jovia";
   const contact = email ? (
     <a className="font-medium text-teal-800 underline" href={`mailto:${email}`}>{email}</a>
   ) : (
-    <span>el canal de soporte que aparece en tu panel de Tamia</span>
+    <span>el canal de soporte que aparece en tu panel de Jovia</span>
   );
 
   return (
     <main className="min-h-screen bg-slate-50">
       <article className="mx-auto max-w-3xl space-y-8 px-4 py-10 sm:px-6 sm:py-14">
         <header className="space-y-2">
-          <p className="text-sm font-medium text-teal-800">Tamia · www.jovia.mx</p>
+          <p className="text-sm font-medium text-teal-800">Jovia · www.jovia.mx</p>
           <h1 className="text-3xl font-semibold text-slate-900">Aviso de privacidad</h1>
           <p className="text-sm text-slate-500">Última actualización: {UPDATED}</p>
         </header>
 
         <Section title="1. Quiénes somos">
           <p>
-            Tamia es un servicio de recepción con inteligencia artificial para negocios (por ejemplo, consultorios y clínicas). Contesta mensajes de WhatsApp, Messenger e Instagram y llamadas
-            telefónicas, y agenda citas en nombre del negocio. El servicio lo opera {legalName} («Tamia», «nosotros»).
+            Jovia es un servicio de recepción con inteligencia artificial para negocios (por ejemplo, consultorios y clínicas). Contesta mensajes de WhatsApp, Messenger e Instagram y llamadas
+            telefónicas, y agenda citas en nombre del negocio. El servicio lo opera {legalName} («Jovia», «nosotros»).
           </p>
           <p>
-            Hay dos tipos de personas cuyos datos tratamos: <b>(a) los negocios que contratan Tamia</b> y sus usuarios, y <b>(b) las personas que le escriben o llaman a esos negocios</b> (por ejemplo, pacientes).
-            Con respecto a (a) somos responsables del tratamiento. Con respecto a (b), Tamia actúa por cuenta del negocio, que es quien decide para qué se usan esos datos; nosotros los tratamos únicamente para prestarle el servicio.
+            Hay dos tipos de personas cuyos datos tratamos: <b>(a) los negocios que contratan Jovia</b> y sus usuarios, y <b>(b) las personas que le escriben o llaman a esos negocios</b> (por ejemplo, pacientes).
+            Con respecto a (a) somos responsables del tratamiento. Con respecto a (b), Jovia actúa por cuenta del negocio, que es quien decide para qué se usan esos datos; nosotros los tratamos únicamente para prestarle el servicio.
           </p>
         </Section>
 
         <Section title="2. Qué datos tratamos">
-          <p className="font-medium text-slate-800">De los negocios que contratan Tamia</p>
+          <p className="font-medium text-slate-800">De los negocios que contratan Jovia</p>
           <ul>
             <Li>Nombre del negocio, correo, nombre y contraseña (guardada de forma cifrada) de sus usuarios.</Li>
-            <Li>Datos de la suscripción (plan, fechas de cobro y estado). Los datos de la tarjeta los procesa Mercado Pago; Tamia no los guarda.</Li>
+            <Li>Datos de la suscripción (plan, fechas de cobro y estado). Los datos de la tarjeta los procesa Mercado Pago; Jovia no los guarda.</Li>
             <Li>Los accesos que el negocio autoriza (WhatsApp, página de Facebook, cuenta de Instagram, Google Calendar), guardados cifrados.</Li>
             <Li>Servicios, horarios, preguntas frecuentes y otra información que el negocio nos da para que el asistente conteste.</Li>
           </ul>
@@ -65,7 +65,7 @@ export default function PrivacyPage() {
             <Li>Los datos de las citas que se agendan (nombre, teléfono, servicio, fecha y hora).</Li>
           </ul>
           <p>
-            Es posible que una conversación incluya datos relacionados con la salud (por ejemplo, el motivo de una consulta). Tamia no pide estos datos por sí misma ni los usa para otra finalidad: los
+            Es posible que una conversación incluya datos relacionados con la salud (por ejemplo, el motivo de una consulta). Jovia no pide estos datos por sí misma ni los usa para otra finalidad: los
             trata solo para atender la conversación y agendar la cita, por cuenta del negocio.
           </p>
         </Section>
@@ -97,7 +97,7 @@ export default function PrivacyPage() {
 
         <Section title="5. Uso de la información de Google">
           <p>
-            Si un negocio conecta Google Calendar, Tamia solicita únicamente permiso para crear y actualizar eventos de las citas confirmadas. Usamos esa información solo para ese fin: no la
+            Si un negocio conecta Google Calendar, Jovia solicita únicamente permiso para crear y actualizar eventos de las citas confirmadas. Usamos esa información solo para ese fin: no la
             compartimos con terceros ni la usamos para publicidad. El uso y la transferencia de la información recibida de las API de Google cumple con la{" "}
             <a className="text-teal-800 underline" href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener noreferrer">Política de datos de usuario de los servicios de API de Google</a>,
             incluidos los requisitos de uso limitado. El negocio puede desconectar el calendario cuando quiera desde el panel.
@@ -128,13 +128,13 @@ export default function PrivacyPage() {
         <Section id="derechos" title="9. Tus derechos (ARCO)">
           <p>
             Conforme a la Ley Federal de Protección de Datos Personales en Posesión de los Particulares, puedes <b>acceder, rectificar, cancelar u oponerte</b> al tratamiento de tus datos, y revocar el
-            consentimiento que nos hayas dado. Si eres paciente o cliente de un negocio que usa Tamia, también puedes pedírselo directamente al negocio.
+            consentimiento que nos hayas dado. Si eres paciente o cliente de un negocio que usa Jovia, también puedes pedírselo directamente al negocio.
           </p>
           <p>Para ejercer tus derechos escribe a {contact} indicando tu nombre, el negocio con el que hablaste y el número o cuenta desde el que lo hiciste. Respondemos en un máximo de 20 días hábiles.</p>
         </Section>
 
         <Section id="eliminar-datos" title="10. Cómo eliminar tus datos">
-          <p>Puedes pedir que eliminemos tus datos de Tamia (por ejemplo, los de una conversación de Messenger, Instagram o WhatsApp) así:</p>
+          <p>Puedes pedir que eliminemos tus datos de Jovia (por ejemplo, los de una conversación de Messenger, Instagram o WhatsApp) así:</p>
           <ol className="space-y-1">
             <li className="ml-5 list-decimal">Escribe a {contact} con el asunto «Eliminar mis datos».</li>
             <li className="ml-5 list-decimal">Indica el nombre del negocio y desde qué cuenta o número le escribiste.</li>
@@ -144,7 +144,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="11. Menores de edad">
-          <p>Tamia es un servicio para negocios y no está dirigido a menores de edad. Si un menor se comunica con un negocio, el negocio es responsable de la atención.</p>
+          <p>Jovia es un servicio para negocios y no está dirigido a menores de edad. Si un menor se comunica con un negocio, el negocio es responsable de la atención.</p>
         </Section>
 
         <Section title="12. Cambios a este aviso">

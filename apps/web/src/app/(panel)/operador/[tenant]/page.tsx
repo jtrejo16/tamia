@@ -5,7 +5,7 @@ import { UUID } from "@/lib/operator";
 import { getDb } from "@/lib/server";
 import { requireValidSession } from "@/lib/session";
 
-export const metadata = { title: "Cliente · Operador · Empleado Digital" };
+export const metadata = { title: "Cliente · Operador · Jovia" };
 
 export default async function OperatorTenantPage({ params }: { params: Promise<{ tenant: string }> }) {
   const { tenant } = await params;

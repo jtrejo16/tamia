@@ -48,6 +48,7 @@ const MESSAGES: Record<string, string> = {
   google_rejected: "Google rechazó la conexión. Inténtalo de nuevo.",
   google_down: "Google no respondió. Inténtalo en unos minutos.",
   no_refresh_token: "Google no entregó el permiso permanente. Vuelve a conectar y acepta todos los permisos.",
+  missing_scope: "Falta el permiso de Calendar. Vuelve a conectar y deja marcada la casilla para ver y editar eventos del calendario.",
   already_connected: "Esa cuenta ya está conectada en otro negocio.",
   no_pages: "Tu cuenta de Facebook no administra ninguna página. Crea una página o pide acceso de administrador.",
   no_subscription: "Tu negocio no tiene una suscripción registrada. Contacta a soporte.",

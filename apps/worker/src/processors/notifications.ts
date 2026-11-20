@@ -138,7 +138,7 @@ export function createNotifier(deps: NotifyDeps) {
           await send(deps.email, {
             to: r.address,
             subject: `${customer} necesita a una persona · ${tenant.name}`,
-            text: `${customer} escribió por ${channelLabel} a ${tenant.name} y necesita que una persona lo atienda.\n\nMotivo: ${reason}\n\nAbre la conversación: ${url}\n\n— Tamia`,
+            text: `${customer} escribió por ${channelLabel} a ${tenant.name} y necesita que una persona lo atienda.\n\nMotivo: ${reason}\n\nAbre la conversación: ${url}\n\n— Jovia`,
           });
           email++;
         }

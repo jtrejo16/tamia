@@ -20,7 +20,7 @@ afterAll(async () => {
 const OPEN = new Date("2027-03-02T16:00:00Z");
 /** Martes 23:00 en Merida (fuera de horario). */
 const CLOSED = new Date("2027-03-03T05:00:00Z");
-const EMAIL = { apiKey: "k", fromEmail: "avisos@tamia.test", fromName: "Tamia" };
+const EMAIL = { apiKey: "k", fromEmail: "avisos@jovia.test", fromName: "Jovia" };
 
 async function setup(opts: { recipients?: Array<{ id: string; kind: "whatsapp" | "email"; address: string; enabled: boolean }>; mode?: string; template?: boolean; kind?: string; urgency?: string } = {}) {
   const w = await makeWorld(dbs.owner);
@@ -51,7 +51,7 @@ async function setup(opts: { recipients?: Array<{ id: string; kind: "whatsapp" |
     makeSender: () => sender,
     email,
     sendEmail,
-    baseUrl: "https://app.tamia.test/",
+    baseUrl: "https://app.jovia.test/",
     now: () => now,
   });
   const notifiedAt = async () => (await dbs.owner.db.select().from(handoffs).where(eq(handoffs.id, h!.id)))[0]!;
@@ -72,7 +72,7 @@ describe("aviso al equipo cuando piden a una persona", () => {
     expect(p[1]).toBe("Carlos Pérez");
     expect(p[2]).toBe("WhatsApp");
     expect(p[3]).toMatch(/pidió hablar con una persona.*urgencia para su hijo/i);
-    expect(p[4]).toBe(`https://app.tamia.test/bandeja?c=${t.h.conversationId}`);
+    expect(p[4]).toBe(`https://app.jovia.test/bandeja?c=${t.h.conversationId}`);
     expect(p.every((x) => !/[\n\t]/.test(x))).toBe(true); // Meta no admite saltos de linea
 
     expect(t.sendEmail).toHaveBeenCalledTimes(1);

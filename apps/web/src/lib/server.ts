@@ -79,7 +79,7 @@ export function getLLM(): LLMProvider {
   return (s().llm ??= createLLMProvider({
     apiKey: env("OPENROUTER_API_KEY"),
     mode: process.env.LLM_MODE,
-    appName: "Empleado Digital (panel)",
+    appName: "Jovia (panel)",
   }));
 }
 

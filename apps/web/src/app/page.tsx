@@ -5,15 +5,15 @@ import { getValidSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-const TITLE = "Tamia · Tu recepcionista con IA para cualquier negocio con citas";
+const TITLE = "Jovia · Tu recepcionista con IA para cualquier negocio con citas";
 const DESCRIPTION =
-  "Tamia contesta a tus clientes por WhatsApp, agenda sus citas y les manda recordatorios, las 24 horas. Para cualquier negocio que trabaje con citas o reservas: clínicas, estéticas, veterinarias, gimnasios, talleres, despachos y más. Pruébalo 14 días gratis.";
+  "Jovia contesta a tus clientes por WhatsApp, agenda sus citas y les manda recordatorios, las 24 horas. Para cualquier negocio que trabaje con citas o reservas: clínicas, estéticas, veterinarias, gimnasios, talleres, despachos y más. Pruébalo 14 días gratis.";
 
 export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   robots: { index: true, follow: true },
-  openGraph: { title: TITLE, description: DESCRIPTION, type: "website", locale: "es_MX", siteName: "Tamia" },
+  openGraph: { title: TITLE, description: DESCRIPTION, type: "website", locale: "es_MX", siteName: "Jovia" },
   metadataBase: new URL(process.env.PUBLIC_BASE_URL?.trim() || "https://www.jovia.mx"),
   alternates: { canonical: "/" },
 };
@@ -33,9 +33,9 @@ export default async function Landing() {
       {/* ------------------------------------------------------------ encabezado */}
       <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <a href="#inicio" className="flex items-center gap-2.5" aria-label="Tamia, inicio">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-700 text-lg font-bold text-white">T</span>
-            <span className="text-lg font-semibold tracking-tight">Tamia</span>
+          <a href="#inicio" className="flex items-center gap-2.5" aria-label="Jovia, inicio">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-700 text-lg font-bold text-white">J</span>
+            <span className="text-lg font-semibold tracking-tight">Jovia</span>
           </a>
           <nav aria-label="Secciones" className="hidden items-center gap-7 text-sm font-medium text-slate-600 md:flex">
             <a className="hover:text-teal-800" href="#giros">Para tu negocio</a>
@@ -66,7 +66,7 @@ export default async function Landing() {
                 <span className="text-teal-700">siempre disponible</span>
               </h1>
               <p className="mt-5 max-w-xl text-lg leading-relaxed text-slate-600">
-                Tamia contesta a tus clientes por WhatsApp, resuelve sus dudas, <strong className="font-semibold text-slate-800">agenda sus citas</strong> y les manda recordatorios. Tú atiendes a quien tienes enfrente; ella atiende al resto.
+                Jovia contesta a tus clientes por WhatsApp, resuelve sus dudas, <strong className="font-semibold text-slate-800">agenda sus citas</strong> y les manda recordatorios. Tú atiendes a quien tienes enfrente; ella atiende al resto.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <a href={signup} className="inline-flex items-center justify-center rounded-xl bg-teal-700 px-6 py-3.5 text-base font-semibold text-white shadow-sm hover:bg-teal-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2">
@@ -84,7 +84,7 @@ export default async function Landing() {
             </div>
 
             {/* Ejemplo de conversación (ilustrativo) */}
-            <div className="relative mx-auto w-full max-w-md" aria-label="Ejemplo de una conversación de WhatsApp con Tamia">
+            <div className="relative mx-auto w-full max-w-md" aria-label="Ejemplo de una conversación de WhatsApp con Jovia">
               <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-gradient-to-br from-teal-200/50 to-emerald-100/40 blur-2xl" />
               <div className="overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-slate-200">
                 <div className="flex items-center gap-3 bg-teal-700 px-4 py-3 text-white">
@@ -124,7 +124,7 @@ export default async function Landing() {
 
         {/* ------------------------------------------------------------ giros */}
         <section id="giros" className="scroll-mt-20 mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
-          <SectionTitle kicker="Para todo tipo de negocio" title="Si trabajas con citas o reservas, Tamia se adapta a ti" />
+          <SectionTitle kicker="Para todo tipo de negocio" title="Si trabajas con citas o reservas, Jovia se adapta a ti" />
           <p className="mx-auto mt-3 max-w-2xl text-center text-slate-600">
             Al registrarte eliges tu giro y ella ya sabe qué datos pedir y qué casos pasar a tu equipo. Tú le cargas tus servicios, precios y horarios.
           </p>
@@ -181,7 +181,7 @@ export default async function Landing() {
             <div>
               <SectionTitle kicker="Pensado para cuidar a tus clientes" title="Que atiendan a tus clientes como tú lo harías" align="left" />
               <p className="mt-5 text-[15px] leading-relaxed text-slate-600">
-                Tamia no es un chatbot genérico. Conoce los servicios y horarios de <em>tu</em> negocio, y está hecha para no inventar precios, horarios ni consejos que no le corresponden.
+                Jovia no es un chatbot genérico. Conoce los servicios y horarios de <em>tu</em> negocio, y está hecha para no inventar precios, horarios ni consejos que no le corresponden.
               </p>
             </div>
             <ul className="space-y-4">
@@ -263,7 +263,7 @@ export default async function Landing() {
         <section className="px-4 pb-16 sm:px-6 lg:pb-24">
           <div className="mx-auto max-w-5xl overflow-hidden rounded-3xl bg-gradient-to-br from-teal-700 to-teal-900 px-6 py-14 text-center text-white shadow-lg sm:px-12">
             <h2 className="text-2xl font-semibold tracking-tight sm:text-4xl">Que ningún mensaje se quede sin respuesta</h2>
-            <p className="mx-auto mt-4 max-w-xl text-teal-50">Crea tu cuenta en un minuto y prueba Tamia {TRIAL_DAYS} días, sin dar tarjeta.</p>
+            <p className="mx-auto mt-4 max-w-xl text-teal-50">Crea tu cuenta en un minuto y prueba Jovia {TRIAL_DAYS} días, sin dar tarjeta.</p>
             <a href={signup} className="mt-8 inline-flex rounded-xl bg-white px-7 py-3.5 text-base font-semibold text-teal-900 shadow-sm hover:bg-teal-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-teal-800">
               Crear mi cuenta gratis
             </a>
@@ -275,8 +275,8 @@ export default async function Landing() {
       <footer className="border-t border-slate-200 bg-slate-50">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-slate-500 sm:flex-row sm:px-6">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-700 text-sm font-bold text-white">T</span>
-            <span>© {new Date().getFullYear()} Tamia · México</span>
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-700 text-sm font-bold text-white">J</span>
+            <span>© {new Date().getFullYear()} Jovia · México</span>
           </div>
           <nav aria-label="Pie de página" className="flex flex-wrap justify-center gap-x-6 gap-y-2">
             <a className="hover:text-teal-800" href="/privacidad">Aviso de privacidad</a>
@@ -299,7 +299,7 @@ const INDUSTRIES: Array<[string, string]> = [
   ["Talleres automotrices", "Toma los datos del vehículo y la falla, y agenda la revisión sin llamadas perdidas."],
   ["Despachos y servicios profesionales", "Agenda la primera asesoría y avisa al instante cuando hay un plazo que corre."],
   ["Escuelas, academias y talleres", "Agenda visitas y clases de prueba, y resuelve las dudas de siempre."],
-  ["Y cualquier negocio con citas", "Si tus clientes preguntan, reservan o confirman por WhatsApp, Tamia puede atenderlos."],
+  ["Y cualquier negocio con citas", "Si tus clientes preguntan, reservan o confirman por WhatsApp, Jovia puede atenderlos."],
 ];
 
 const FAQ: Array<[string, string]> = [

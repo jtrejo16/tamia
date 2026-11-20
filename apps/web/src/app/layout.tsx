@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Empleado Digital",
+  title: "Jovia",
   description: "Panel de atención a clientes por WhatsApp",
   robots: { index: false, follow: false },
 };

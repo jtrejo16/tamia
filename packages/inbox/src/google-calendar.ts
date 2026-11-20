@@ -104,6 +104,9 @@ export async function exchangeGoogleCode(
 ): Promise<{ refreshToken: string; email: string | null }> {
   const j = await tokenCall(deps, { grant_type: "authorization_code", code: input.code, redirect_uri: input.redirectUri });
   if (typeof j.refresh_token !== "string" || !j.refresh_token) throw new GoogleError("Google no entrego un permiso permanente", 400, "no_refresh_token");
+  // Google deja desmarcar permisos sueltos en su pantalla: sin calendar.events la conexion "funciona" pero nunca podria crear un evento.
+  const granted = typeof j.scope === "string" ? j.scope.split(/\s+/) : [];
+  if (!granted.includes(GOOGLE_SCOPES[0]!)) throw new GoogleError("Google no concedio el permiso de Calendar", 400, "missing_scope");
   return { refreshToken: j.refresh_token, email: emailFromIdToken(j.id_token) };
 }
 
@@ -189,7 +192,7 @@ export async function connectGoogleCalendar(
   deps: GoogleDeps,
   ctx: PanelContext,
   input: { code: string; redirectUri: string },
-): Promise<Success | Failure<"forbidden" | "google_rejected" | "google_down" | "no_refresh_token">> {
+): Promise<Success | Failure<"forbidden" | "google_rejected" | "google_down" | "no_refresh_token" | "missing_scope">> {
   if (!can(ctx.role, "configure")) return fail("forbidden");
   let exchanged: { refreshToken: string; email: string | null };
   try {
@@ -199,6 +202,7 @@ export async function connectGoogleCalendar(
     if (isGoogleError(e)) console.error(`[google-calendar] Google respondio ${e.status}: ${e.code ?? "sin codigo"} - ${e.message}`);
     if (isGoogleError(e)) {
       if (e.code === "no_refresh_token") return fail("no_refresh_token");
+      if (e.code === "missing_scope") return fail("missing_scope");
       if (e.status === 0 || e.status >= 500) return fail("google_down");
     }
     return fail("google_rejected");
@@ -265,7 +269,7 @@ export interface CalendarSyncResult {
 type LogFn = (event: string, data?: Record<string, unknown>) => void;
 
 function buildEvent(a: { startsAt: Date; endsAt: Date; id: string }, svc: string, who: string, phone: string | null, staffName: string | null, tz: string): CalendarEvent {
-  const lines = [`Paciente: ${who}`, phone ? `Teléfono: ${phone}` : null, staffName ? `Con: ${staffName}` : null, "Agendada por el asistente (Tamia)."].filter(Boolean);
+  const lines = [`Paciente: ${who}`, phone ? `Teléfono: ${phone}` : null, staffName ? `Con: ${staffName}` : null, "Agendada por el asistente (Jovia)."].filter(Boolean);
   return {
     summary: `${svc} — ${who}`,
     description: lines.join("\n"),

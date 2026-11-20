@@ -202,7 +202,7 @@ export async function startCheckout(
   try {
     // Si queda prueba gratis, el primer cobro es al terminarla.
     const preapproval = await mp.createSubscription({
-      reason: `Empleado Digital — plan ${plan.name}`,
+      reason: `Jovia — plan ${plan.name}`,
       amountMxn: plan.priceMxn,
       payerEmail: input.payerEmail,
       externalReference: ctx.tenantId,

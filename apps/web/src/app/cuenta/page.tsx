@@ -2,7 +2,7 @@ import { AccountView } from "@/components/account-view";
 import { requireValidSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Mi cuenta · Empleado Digital" };
+export const metadata = { title: "Mi cuenta · Jovia" };
 
 /** Fuera del panel a proposito: debe poder abrirse aunque la contraseña sea temporal. */
 export default async function AccountPage({ searchParams }: { searchParams: Promise<{ obligatorio?: string }> }) {

@@ -25,7 +25,7 @@ export function emailDepsFromEnv(env: Record<string, string | undefined>): Email
   const apiKey = env.BREVO_API_KEY?.trim();
   const fromEmail = env.EMAIL_FROM?.trim();
   if (!apiKey || !fromEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromEmail)) return null;
-  return { apiKey, fromEmail, fromName: env.EMAIL_FROM_NAME?.trim() || "Tamia" };
+  return { apiKey, fromEmail, fromName: env.EMAIL_FROM_NAME?.trim() || "Jovia" };
 }
 
 export async function sendEmail(deps: EmailDeps, input: { to: string; subject: string; text: string }): Promise<void> {

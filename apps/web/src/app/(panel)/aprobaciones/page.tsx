@@ -1,6 +1,6 @@
 import { ApprovalsView } from "@/components/approvals-view";
 
-export const metadata = { title: "Aprobaciones · Empleado Digital" };
+export const metadata = { title: "Aprobaciones · Jovia" };
 
 export default function ApprovalsPage() {
   return <ApprovalsView />;

@@ -17,6 +17,7 @@ const GC_MESSAGES: Record<string, { tone: "green" | "rose" | "amber"; text: stri
   google_rejected: { tone: "rose", text: "Google rechazó la conexión. Inténtalo de nuevo." },
   google_down: { tone: "rose", text: "Google no respondió. Inténtalo en unos minutos." },
   no_refresh_token: { tone: "rose", text: "Google no entregó el permiso permanente. Vuelve a conectar y acepta todos los permisos." },
+  missing_scope: { tone: "rose", text: "Falta el permiso de Calendar. Vuelve a conectar y deja marcada la casilla para ver y editar eventos del calendario." },
 };
 
 /** Pestaña "Calendario" de Ajustes: conectar Google Calendar para ver las citas en el calendario del consultorio. */

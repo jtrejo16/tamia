@@ -87,7 +87,7 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-700 font-bold text-white">E</div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-slate-900">{info.tenantName}</p>
-                <p className="text-xs text-slate-500">Empleado Digital</p>
+                <p className="text-xs text-slate-500">Jovia</p>
               </div>
             </div>
           </div>

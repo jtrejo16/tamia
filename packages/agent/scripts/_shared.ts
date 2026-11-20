@@ -39,7 +39,7 @@ export function provider(): LLMProvider {
   return createLLMProvider({
     apiKey: env("OPENROUTER_API_KEY"),
     mode: process.env.LLM_MODE,
-    appName: "Empleado Digital (desarrollo)",
+    appName: "Jovia (desarrollo)",
   });
 }
 

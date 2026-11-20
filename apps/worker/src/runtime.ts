@@ -39,7 +39,7 @@ export function createSystem(config: WorkerConfig, log: Logger = consoleLogger):
   const llm = createLLMProvider({
     apiKey: config.openRouterApiKey,
     mode: config.llmMode,
-    appName: "Empleado Digital",
+    appName: "Jovia",
   });
   const system: WorkerSystem = {
     db,

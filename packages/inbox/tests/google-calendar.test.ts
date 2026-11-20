@@ -34,7 +34,7 @@ interface Call {
 }
 
 /** Google falso: OAuth + eventos. `mode` permite simular fallas. */
-function fakeGoogle(opts: { refresh?: boolean; revoked?: boolean; patch404?: boolean; insert400?: boolean } = {}) {
+function fakeGoogle(opts: { refresh?: boolean; revoked?: boolean; patch404?: boolean; insert400?: boolean; noCalendarScope?: boolean } = {}) {
   const calls: Call[] = [];
   const fetchFake = (async (url: string | URL | Request, init?: RequestInit) => {
     const u = new URL(String(url));
@@ -45,7 +45,7 @@ function fakeGoogle(opts: { refresh?: boolean; revoked?: boolean; patch404?: boo
     const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status });
     if (u.pathname === "/token") {
       if (body.grant_type === "authorization_code")
-        return json({ access_token: "at", id_token: idToken("doctora@gmail.com"), ...(opts.refresh === false ? {} : { refresh_token: "RT-secreto-123" }) });
+        return json({ access_token: "at", id_token: idToken("doctora@gmail.com"), scope: opts.noCalendarScope ? "openid https://www.googleapis.com/auth/userinfo.email" : "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events", ...(opts.refresh === false ? {} : { refresh_token: "RT-secreto-123" }) });
       if (opts.revoked) return json({ error: "invalid_grant", error_description: "Token has been expired or revoked." }, 400);
       return json({ access_token: "access-" + uid() });
     }
@@ -108,6 +108,14 @@ describe("Google Calendar: conectar", () => {
     const [row] = await dbs.owner.db.select().from(calendarConnections).where(eq(calendarConnections.tenantId, w.tenantId));
     expect(row!.refreshTokenEnc.toString("utf8")).not.toContain("RT-secreto-123");
     expect(await getCalendarConnection(dbs.app.db, w.owner)).toMatchObject({ connected: true, accountEmail: "doctora@gmail.com", status: "active" });
+  });
+
+  it("si la persona desmarca el permiso de Calendar, lo dice y no guarda la conexion", async () => {
+    const g = fakeGoogle({ noCalendarScope: true });
+    const w = await makeWorld(dbs.owner);
+    worlds.push(w);
+    expect(await connectGoogleCalendar(dbs.app.db, g.deps, w.owner, { code: "c", redirectUri: "https://panel.test/cb" })).toMatchObject({ ok: false, error: "missing_scope" });
+    expect(await dbs.owner.db.select().from(calendarConnections).where(eq(calendarConnections.tenantId, w.tenantId))).toHaveLength(0);
   });
 
   it("si Google no entrega permiso permanente, lo dice y no guarda nada", async () => {

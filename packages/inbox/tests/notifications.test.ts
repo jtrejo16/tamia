@@ -108,17 +108,17 @@ describe("correo (Brevo)", () => {
     expect(emailDepsFromEnv({})).toBeNull();
     expect(emailDepsFromEnv({ BREVO_API_KEY: "k" })).toBeNull();
     expect(emailDepsFromEnv({ BREVO_API_KEY: "k", EMAIL_FROM: "no-es-correo" })).toBeNull();
-    expect(emailDepsFromEnv({ BREVO_API_KEY: "k", EMAIL_FROM: "avisos@jovia.mx" })).toEqual({ apiKey: "k", fromEmail: "avisos@jovia.mx", fromName: "Tamia" });
+    expect(emailDepsFromEnv({ BREVO_API_KEY: "k", EMAIL_FROM: "avisos@jovia.mx" })).toEqual({ apiKey: "k", fromEmail: "avisos@jovia.mx", fromName: "Jovia" });
   });
 
   it("manda el correo a la API de Brevo y no filtra la clave en los errores", async () => {
-    const deps = { apiKey: "SECRETA-123", fromEmail: "avisos@jovia.mx", fromName: "Tamia" };
+    const deps = { apiKey: "SECRETA-123", fromEmail: "avisos@jovia.mx", fromName: "Jovia" };
     const ok = vi.fn(async () => new Response(JSON.stringify({ messageId: "m1" }), { status: 201 }));
     await sendEmail({ ...deps, fetch: ok as unknown as typeof fetch }, { to: "x@y.mx", subject: "Hola", text: "Texto" });
     const [url, init] = ok.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://api.brevo.com/v3/smtp/email");
     expect((init.headers as Record<string, string>)["api-key"]).toBe("SECRETA-123");
-    expect(JSON.parse(String(init.body))).toMatchObject({ sender: { email: "avisos@jovia.mx", name: "Tamia" }, to: [{ email: "x@y.mx" }], subject: "Hola", textContent: "Texto" });
+    expect(JSON.parse(String(init.body))).toMatchObject({ sender: { email: "avisos@jovia.mx", name: "Jovia" }, to: [{ email: "x@y.mx" }], subject: "Hola", textContent: "Texto" });
 
     const rejected = vi.fn(async () => new Response(JSON.stringify({ message: "remitente no verificado" }), { status: 400 }));
     const err = (await sendEmail({ ...deps, fetch: rejected as unknown as typeof fetch }, { to: "x@y.mx", subject: "s", text: "t" }).catch((e) => e)) as EmailError;
