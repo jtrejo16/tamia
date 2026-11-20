@@ -21,6 +21,7 @@ const ICONS = {
   chart: "M4 20V10M10 20V4M16 20v-7M22 20H2",
   out: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   phone: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z",
+  users: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8",
   cog: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z",
 };
 
@@ -28,6 +29,7 @@ const ITEMS = [
   { href: "/bandeja", label: "Bandeja", icon: ICONS.inbox, badge: "attention" as const },
   { href: "/aprobaciones", label: "Aprobaciones", icon: ICONS.check, badge: "approvals" as const },
   { href: "/citas", label: "Citas", icon: ICONS.calendar, badge: null },
+  { href: "/clientes", label: "Clientes", icon: ICONS.users, badge: null },
   { href: "/llamadas", label: "Llamadas", icon: ICONS.phone, badge: null },
   { href: "/estadisticas", label: "Estadísticas", icon: ICONS.chart, badge: null },
   { href: "/probador", label: "Probador", icon: ICONS.flask, badge: null },
@@ -84,7 +86,7 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
         <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
           <div className="p-5">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-700 font-bold text-white">E</div>
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-700 font-bold text-white">J</div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-slate-900">{info.tenantName}</p>
                 <p className="text-xs text-slate-500">Jovia</p>

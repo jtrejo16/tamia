@@ -169,6 +169,13 @@
       "when": 1795102749729,
       "tag": "0023_notifications_and_reviews",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795198634332,
+      "tag": "0024_customer_notes",
+      "breakpoints": true
     }
   ]
 }

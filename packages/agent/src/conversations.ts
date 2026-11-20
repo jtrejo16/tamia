@@ -1,5 +1,6 @@
 import { channels, contactIdentities, contacts, conversations, withTenant, type Database } from "@empleado/db";
-import { and, asc, desc, eq, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
+import { phoneVariants } from "./contact-match";
 
 export interface EnsureConversationInput {
   tenantId: string;
@@ -79,7 +80,8 @@ export async function ensureConversation(
       }
     } else {
       if (!input.phone) throw new Error("Falta el telefono o la identidad del cliente");
-      [contact] = await tx.select().from(contacts).where(eq(contacts.phoneE164, input.phone));
+      const found = await tx.select().from(contacts).where(inArray(contacts.phoneE164, phoneVariants(input.phone)));
+      contact = found.find((c) => c.phoneE164 === input.phone) ?? found[0];
     }
     if (!input.identity && !contact) {
       // Carrera: dos mensajes del mismo cliente nuevo a la vez. El indice unico decide.

@@ -110,6 +110,8 @@ export const contacts = pgTable(
     tags: text("tags").array().notNull().default([]),
     /** Hechos durables: preferencias, seguro, idioma, etc. */
     profile: jsonb("profile").$type<Record<string, unknown>>().notNull().default({}),
+    /** Notas internas del equipo sobre el cliente. NO se le dan al asistente ni al cliente. */
+    notes: text("notes"),
     optInMarketing: boolean("opt_in_marketing").notNull().default(false),
     optInAt: timestamp("opt_in_at", { withTimezone: true }),
     optedOutAt: timestamp("opted_out_at", { withTimezone: true }),

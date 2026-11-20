@@ -24,6 +24,7 @@ const MESSAGES: Record<string, string> = {
   fecha_invalida: "La fecha no es válida.",
   contacto_no_encontrado: "No se encontró al cliente.",
   same_contact: "Elige dos clientes distintos.",
+  phone_taken: "Ese teléfono ya pertenece a otro cliente.",
   bad_session: "Sesión de prueba inválida.",
   invalid_credentials: "Correo o contraseña incorrectos.",
   no_membership: "Tu usuario no pertenece a ningún negocio.",
@@ -120,6 +121,7 @@ const STATUS: Record<string, number> = {
   fecha_invalida: 400,
   contacto_no_encontrado: 404,
   same_contact: 400,
+  phone_taken: 409,
 };
 
 export function failure(error: string, extra: Record<string, unknown> = {}): NextResponse {
