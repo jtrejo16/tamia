@@ -280,6 +280,7 @@ export default async function Landing() {
           </div>
           <nav aria-label="Pie de página" className="flex flex-wrap justify-center gap-x-6 gap-y-2">
             <a className="hover:text-teal-800" href="/privacidad">Aviso de privacidad</a>
+            <a className="hover:text-teal-800" href="/terminos">Condiciones del servicio</a>
             <a className="hover:text-teal-800" href={login}>Iniciar sesión</a>
             <a className="hover:text-teal-800" href={signup}>Crear cuenta</a>
           </nav>

@@ -153,6 +153,7 @@ export default function PrivacyPage() {
 
         <Section title="13. Contacto">
           <p>Dudas sobre este aviso o sobre tus datos: {contact}.</p>
+          <p>Consulta también nuestras <a className="text-teal-800 underline" href="/terminos">condiciones del servicio</a>.</p>
         </Section>
       </article>
     </main>
