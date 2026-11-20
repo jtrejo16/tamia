@@ -255,6 +255,31 @@ describe("niveles de autonomia", () => {
   });
 });
 
+describe("no repite citas viejas del historial", () => {
+  it("marca como vencidos los mensajes de hace mas de medio dia y el prompt manda ceñirse a las citas vigentes", async () => {
+    const w = await world();
+    await dbs.owner.db.insert(messages).values({
+      tenantId: w.tenantId,
+      conversationId: w.conversationId,
+      channelId: w.channelId,
+      direction: "out",
+      sender: "bot",
+      type: "text",
+      body: "Recordatorio: tu cita de limpieza es hoy a las 14:00.",
+      status: "sent",
+      createdAt: new Date(NOW.getTime() - 48 * 3_600_000),
+    });
+    const llm = new FakeLLM([{ text: "No tienes citas próximas." }]);
+    await turn(w, llm, "¿a qué hora es mi cita?");
+    const msgs = llm.requests[0]!.messages;
+    const old = msgs.find((m) => m.role === "assistant");
+    expect(String(old!.content)).toContain("ya no es de hoy");
+    expect(String(old!.content)).toContain("hoy a las 14:00"); // sigue ahi, pero marcado
+    expect(String(msgs[0]!.content)).toContain("Nunca tomes una fecha, hora o cita de mensajes anteriores");
+    expect(String(msgs[0]!.content)).toContain("Citas próximas: ninguna");
+  });
+});
+
 describe("el asistente retoma una conversacion que el equipo no atendio", () => {
   const HOUR = 3_600_000;
   /** Escala en NOW y fija todas las marcas de tiempo en NOW (la base usa el reloj real). */

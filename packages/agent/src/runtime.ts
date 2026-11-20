@@ -109,12 +109,19 @@ function resolvePack(slug: string | null): Pack {
   }
 }
 
+const STALE_MESSAGE_MS = 12 * 3_600_000;
+
 /** Junta mensajes seguidos del mismo rol: algunos proveedores rechazan roles repetidos. */
-function toChatHistory(history: Message[]): ChatMessage[] {
+function toChatHistory(history: Message[], now: Date, timezone: string): ChatMessage[] {
   const out: ChatMessage[] = [];
   for (const m of history) {
-    const content = messageText(m);
+    let content = messageText(m);
     if (!content) continue;
+    // Lo que se dijo hace mas de medio dia ya no es "hoy": se marca con su fecha para que el modelo no repita
+    // un recordatorio viejo ("tu cita es hoy a las 14:00") como si fuera vigente.
+    if (m.direction !== "in" && now.getTime() - m.createdAt.getTime() > STALE_MESSAGE_MS) {
+      content += ` [mensaje enviado el ${formatLocal(m.createdAt, timezone)}; ya no es de hoy]`;
+    }
     const role = m.direction === "in" ? "user" : "assistant";
     const last = out[out.length - 1];
     if (last && last.role === role && typeof last.content === "string") {
@@ -334,7 +341,7 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
       .join("\n"),
   });
 
-  const chat: ChatMessage[] = [{ role: "system", content: systemPrompt }, ...toChatHistory(loaded.history)];
+  const chat: ChatMessage[] = [{ role: "system", content: systemPrompt }, ...toChatHistory(loaded.history, now, tenant.timezone)];
   const tools = toolDefinitions();
   const dataCollection = dataCollectionFor(tenant.vertical);
 
