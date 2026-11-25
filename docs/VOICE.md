@@ -45,7 +45,16 @@ En Ajustes → Llamadas, el dueño puede guardar el **número de recepción** (f
 ## Límites actuales (honestos)
 - **No probado con Retell real.** Se verificó con un Retell simulado. Los nombres de campos de la API de Retell (crear modelo y agente, formato de la firma, contenido de las funciones) se escribieron con su documentación pública y **la primera sincronización puede requerir ajustes**.
 - Solo **llamadas entrantes**. Salientes (recordatorios, seguimiento) no están construidas; requieren reglas de consentimiento y horario.
-- La transferencia es **en frío por SIP REFER**: Retell le pide a la línea que reenvíe la llamada, sin troncal de salida. La asistida (llamada nueva por la salida) la rechazaba el 403 de DIDWW. En DIDWW, la troncal de entrada necesita «Máx. transferencias» ≥ 1. No avisa a quien contesta ni vuelve al asistente si nadie contesta. Pendiente de probar con una llamada real tras este cambio.
+- La transferencia es **en frío por SIP REFER**: Retell le pide a la línea que reenvíe la llamada y la línea marca al equipo.
+- **Con telefonía propia en DIDWW (probado el 25-nov-2026)** hay que configurar DIDWW así, o la línea rechaza el reenvío en ~90 ms:
+  1. **Troncal de SALIDA** (Voice → Outbound Trunks): autenticación «Credentials & IP-Based»; «Allowed SIP IP addresses» = rango de Retell (`18.98.16.120/30`) más las 7 direcciones de entrada de DIDWW (`46.19.209.14`, `46.19.210.14`, `46.19.212.14`, `46.19.213.14`, `46.19.214.14`, `46.19.215.14`, `185.238.173.14`); destinos limitados a México (`52`) y un tope de gasto diario bajo.
+  2. **Troncal de ENTRADA** (la que apunta a `sip.retellai.com`): «Max transfers» ≥ 1, «Enable Authorization» con el usuario y la contraseña de la troncal de salida, y «Network Protocol» IPv4.
+  3. **Retell → número → SIP:** Termination URI = un servidor regional de salida de DIDWW (por ejemplo `mia.us.out.didww.com`) con el usuario y la contraseña de la troncal de salida.
+  4. **El destino de la transferencia debe ser una dirección SIP sin «+»**: `sip:529993518870@mia.us.out.didww.com`. Con el teléfono a secas (`+529993518870`) DIDWW lo rechaza y el CDR de salida queda vacío.
+     Jovia lo arma sola al sincronizar: lee el Termination URI que el número ya tiene en Retell y, si es un servidor de salida de DIDWW (`*.out.didww.com`), convierte el número de recepción en esa dirección SIP (`transferDestination` en `packages/inbox/src/retell.ts`). Con otras líneas (Retell, Twilio) manda el teléfono. Si Retell no responde la consulta, manda el teléfono y la sincronización sigue.
+- La llamada transferida es una llamada nueva de salida y DIDWW la cobra por minuto.
+- Si la transferencia falla, el asistente no reintenta: ofrece una llamada de vuelta y deja una escalada para avisar al equipo.
+- No avisa a quien contesta ni vuelve al asistente si nadie contesta (es una transferencia en frío).
 - No se guarda la grabación de audio.
 - Costos: Retell y la línea cobran por minuto; revisa sus tarifas.
 - La IA de las llamadas la pone Retell (su modelo), no la de OpenRouter.

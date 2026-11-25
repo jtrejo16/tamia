@@ -16,7 +16,7 @@ import {
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { tenantAccess } from "./billing";
-import { CALL_ANALYSIS_ES, RetellError, retellModelConfig, type RetellClient, type RetellTool } from "./retell";
+import { CALL_ANALYSIS_ES, RetellError, retellModelConfig, transferDestination, type RetellClient, type RetellTool } from "./retell";
 import { DEFAULT_GREETING, VOICE_TRANSFER_CHECK, VOICE_TRANSFER_TOOL, buildVoicePrompt, voiceToolNames } from "./voice-prompt";
 import { can, fail, type Failure, type PanelContext, type Success } from "./types";
 
@@ -126,6 +126,10 @@ export async function syncVoiceAgent(
 
   const base = input.baseUrl.replace(/\/$/, "");
   const transfer = Boolean(settings.transferNumber);
+  // Con telefonia propia en DIDWW el destino va como direccion SIP (ver transferDestination); si no, el telefono a secas.
+  const transferTo = transfer
+    ? transferDestination(settings.transferNumber!, settings.phoneNumber ? await retell.getTerminationUri(settings.phoneNumber) : null)
+    : "";
   const wanted = new Set(voiceToolNames(settings.allowBooking, transfer));
   const tools: RetellTool[] = [
     ...(transfer
@@ -162,7 +166,7 @@ export async function syncVoiceAgent(
             type: "transfer_call" as const,
             name: VOICE_TRANSFER_TOOL,
             description: "Pasa la llamada en vivo a una persona del equipo. Solo después de que puede_transferir diga que hay alguien disponible.",
-            transfer_destination: { type: "predefined" as const, number: settings.transferNumber! },
+            transfer_destination: { type: "predefined" as const, number: transferTo },
             // En frio por SIP REFER: Retell le pide a la linea (DIDWW) que reenvie la llamada. La asistida marca una llamada
             // nueva por la troncal de SALIDA, y con la linea de DIDWW (solo entrada) la rechazan (403).
             transfer_option: { type: "cold_transfer", cold_transfer_mode: "sip_refer" },

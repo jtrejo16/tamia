@@ -12,6 +12,7 @@ import {
   saveVoiceSettings,
   sendHumanMessage,
   syncVoiceAgent,
+  transferDestination,
   verifyRetellSignature,
   voiceCostSettings,
   voiceToolNames,
@@ -41,13 +42,17 @@ async function world() {
 }
 
 /** Retell falso: guarda lo que se le manda y responde como la API. */
-function fakeRetell(over: { status?: number } = {}) {
+function fakeRetell(over: { status?: number; termination?: string; phoneLookupFails?: boolean } = {}) {
   const calls: Array<{ method: string; path: string; body: any }> = [];
   const fetchFake = (async (url: string | URL | Request, init?: RequestInit) => {
     const u = new URL(String(url));
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ method: init?.method ?? "GET", path: u.pathname, body });
     const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status });
+    if (u.pathname.startsWith("/get-phone-number/")) {
+      if (over.phoneLookupFails || !over.termination) return json({ message: "no existe" }, 404);
+      return json({ phone_number: decodeURIComponent(u.pathname.split("/").pop()!), sip_outbound_trunk_config: { termination_uri: over.termination } });
+    }
     if (over.status) return json({ message: "rechazado" }, over.status);
     if (u.pathname === "/create-retell-llm") return json({ llm_id: `llm_${uid()}` });
     if (u.pathname === "/create-agent") return json({ agent_id: `agent_${uid()}` });
@@ -436,6 +441,37 @@ describe("transferir la llamada a una persona", () => {
     expect(llm.general_prompt).toContain("NO transfieras");
     expect(llm.general_prompt).toContain("NO la intentes otra vez");
     expect(llm.general_prompt).toContain("escalar_a_humano con tipo pidio_persona");
+  });
+
+  it("con telefonia propia en DIDWW el destino va como direccion SIP sin '+' (DIDWW rechaza el numero a secas); con otras lineas, el telefono", async () => {
+    const dest = async (fake: ReturnType<typeof fakeRetell>, phoneNumber = "+529992829059") => {
+      const w = await world();
+      await saveVoiceSettings(dbs.app.db, w.owner, { enabled: true, allowBooking: false, voiceId: "v1", phoneNumber, transferNumber: "+529993518870" });
+      const sync = await syncVoiceAgent(dbs.app.db, fake.client, w.owner, { baseUrl: "https://panel.test" });
+      expect(sync.ok).toBe(true);
+      const llm = fake.calls.find((c) => c.path === "/create-retell-llm")!.body;
+      return llm.general_tools.find((t: any) => t.type === "transfer_call").transfer_destination;
+    };
+    // Linea de DIDWW: direccion SIP en el servidor de salida que el numero ya tiene en Retell.
+    const didww = fakeRetell({ termination: "mia.us.out.didww.com" });
+    expect(await dest(didww)).toEqual({ type: "predefined", number: "sip:529993518870@mia.us.out.didww.com" });
+    expect(didww.calls.some((c) => c.method === "GET" && c.path === "/get-phone-number/%2B529992829059")).toBe(true);
+    // Otra linea (Twilio): el telefono, como siempre.
+    expect(await dest(fakeRetell({ termination: "mi-negocio.pstn.twilio.com" }))).toEqual({ type: "predefined", number: "+529993518870" });
+    // Retell no encuentra el numero o falla: el telefono, y la sincronizacion no se cae.
+    expect(await dest(fakeRetell({ phoneLookupFails: true }))).toEqual({ type: "predefined", number: "+529993518870" });
+    // Sin numero de linea guardado no se consulta nada.
+    const none = fakeRetell({ termination: "mia.us.out.didww.com" });
+    expect(await dest(none, "")).toEqual({ type: "predefined", number: "+529993518870" });
+    expect(none.calls.some((c) => c.path.startsWith("/get-phone-number/"))).toBe(false);
+  });
+
+  it("transferDestination: solo los servidores de salida de DIDWW cambian el formato", () => {
+    expect(transferDestination("+529993518870", "mia.us.out.didww.com")).toBe("sip:529993518870@mia.us.out.didww.com");
+    expect(transferDestination("+529993518870", "SIP:Fra.EU.out.didww.com:5060")).toBe("sip:529993518870@fra.eu.out.didww.com");
+    expect(transferDestination("+529993518870", "any.out.didww.com")).toBe("sip:529993518870@any.out.didww.com");
+    for (const other of ["out.didww.com", "mia.us.out.didww.com.evil.test", "evil-didww.com", "x.pstn.twilio.com", "", null, undefined])
+      expect(transferDestination("+529993518870", other)).toBe("+529993518870");
   });
 
   it("el numero de recepcion debe ser internacional y solo lo guarda el dueño", async () => {

@@ -96,6 +96,17 @@ export function voiceCostSettings(env: Record<string, string | undefined>): { mo
   };
 }
 
+/**
+ * A donde manda Retell la transferencia. Con numeros de Retell o de Twilio basta el telefono (+52...). Pero con telefonia propia
+ * en DIDWW, la linea valida el reenvio (SIP REFER) y exige una direccion SIP con el numero SIN "+" en un servidor de salida de DIDWW;
+ * con el numero a secas lo rechaza en milisegundos. `terminationUri` es el servidor de salida que el numero ya tiene en Retell.
+ */
+export function transferDestination(number: string, terminationUri: string | null | undefined): string {
+  const host = (terminationUri ?? "").trim().toLowerCase().replace(/^sips?:/, "").split(/[:;/]/)[0] ?? "";
+  if (!/^(?:[a-z0-9-]+\.)+out\.didww\.com$/.test(host)) return number;
+  return `sip:${number.replace(/\D/g, "")}@${host}`;
+}
+
 /** Resumen en ESPAÑOL para el equipo (Retell resume en ingles si no se le indica). Usado en Llamadas y en la bandeja. */
 export const CALL_ANALYSIS_ES: NonNullable<RetellAgentInput["post_call_analysis_data"]> = [
   {
@@ -141,6 +152,17 @@ export class RetellClient {
     const json = (await res.json().catch(() => ({}))) as T & { message?: string; error_message?: string };
     if (!res.ok) throw new RetellError(json.message ?? json.error_message ?? `Retell respondio ${res.status}`, res.status);
     return json;
+  }
+
+  /** Servidor de salida (Termination URI) de un numero de telefonia propia. null si no tiene o si Retell no respondio: nunca estorba la sincronizacion. */
+  async getTerminationUri(phone: string): Promise<string | null> {
+    try {
+      const r = await this.call<{ sip_outbound_trunk_config?: { termination_uri?: unknown } }>("GET", `/get-phone-number/${encodeURIComponent(phone)}`);
+      const uri = r.sip_outbound_trunk_config?.termination_uri;
+      return typeof uri === "string" && uri.trim() ? uri.trim() : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Voces disponibles en la cuenta de Retell (para el desplegable del panel). */
