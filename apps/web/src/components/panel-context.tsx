@@ -8,6 +8,8 @@ export interface PanelInfo {
   role: "owner" | "agent" | "viewer";
   tenantName: string;
   timezone: string;
+  /** Modulos del negocio (citas, restaurante...): deciden el menu. */
+  modules: string[];
   llmMode: "free" | "paid";
   /** Operador de la plataforma: ve el panel de operador. */
   isOperator: boolean;

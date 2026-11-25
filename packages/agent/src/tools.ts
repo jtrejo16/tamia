@@ -29,6 +29,7 @@ import {
   type Slot,
   type TimeWindow,
 } from "@empleado/scheduling";
+import { DEFAULT_MODULES, type ModuleId } from "@empleado/shared/modules";
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -41,6 +42,7 @@ import {
 import { findRelatedContacts } from "./contact-match";
 import { humanAvailability } from "./humanhours";
 import { searchKnowledge } from "./knowledge-search";
+import { activeModules, findModuleTool, toolsOfModules, type ModuleTool } from "./modules";
 import type { PendingAction, ToolResult, TurnContext } from "./types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -1099,18 +1101,49 @@ function policyBlock(ctx: TurnContext, startsAt: Date): ToolResult | null {
 
 // ------------------------------------------------------------------ registro
 
-export function toolDefinitions(): ToolDefinition[] {
-  return (Object.keys(TOOLS) as ToolName[]).map((name) => {
-    const { $schema: _omit, ...parameters } = z.toJSONSchema(schemas[name], { io: "input" }) as Record<string, unknown>;
-    return {
+/**
+ * A que modulo pertenece cada herramienta del nucleo. Las que no aparecen aqui son del NUCLEO y estan siempre
+ * (horario, conocimiento, datos del cliente, ubicacion, escalar). Las de un modulo solo las ve y las puede usar un negocio
+ * que tenga ese modulo; los negocios actuales tienen "citas", asi que no notan ninguna diferencia.
+ */
+const CORE_TOOL_MODULE: Partial<Record<ToolName, ModuleId>> = {
+  consultar_servicios: "citas",
+  buscar_disponibilidad: "citas",
+  crear_cita: "citas",
+  buscar_citas_del_contacto: "citas",
+  reprogramar_cita: "citas",
+  cancelar_cita: "citas",
+};
+
+/** Nombres de las herramientas disponibles para un negocio con esos modulos (nucleo y modulos, en orden). */
+function availableToolNames(modules: readonly string[]): string[] {
+  const core = (Object.keys(TOOLS) as ToolName[]).filter((n) => !CORE_TOOL_MODULE[n] || modules.includes(CORE_TOOL_MODULE[n]!));
+  return [...core, ...toolsOfModules(modules).map((t) => t.tool.name)];
+}
+
+const jsonSchema = (schema: z.ZodType) => {
+  const { $schema: _omit, ...parameters } = z.toJSONSchema(schema, { io: "input" }) as Record<string, unknown>;
+  return parameters;
+};
+
+/** Definiciones que ve el modelo. Sin `modules` se asume un negocio de citas (lo que habia antes). */
+export function toolDefinitions(modules: readonly string[] = DEFAULT_MODULES): ToolDefinition[] {
+  const core = (Object.keys(TOOLS) as ToolName[])
+    .filter((n) => !CORE_TOOL_MODULE[n] || modules.includes(CORE_TOOL_MODULE[n]!))
+    .map((name) => ({
       type: "function" as const,
-      function: { name, description: TOOLS[name].description, parameters },
-    };
-  });
+      function: { name, description: TOOLS[name].description, parameters: jsonSchema(schemas[name]) },
+    }));
+  const extra = toolsOfModules(modules).map(({ tool }) => ({
+    type: "function" as const,
+    function: { name: tool.name, description: tool.description, parameters: jsonSchema(tool.schema) },
+  }));
+  return [...core, ...extra];
 }
 
 export function isMutating(name: string): boolean {
-  return name in TOOLS && TOOLS[name as ToolName].mutating;
+  if (Object.hasOwn(TOOLS, name)) return TOOLS[name as ToolName].mutating;
+  return findModuleTool(name)?.tool.mutating ?? false;
 }
 
 export interface ToolRun {
@@ -1119,12 +1152,40 @@ export interface ToolRun {
   result: ToolResult;
 }
 
+/** Lo mismo que runTool, para una herramienta que aporta un modulo (validar, ejecutar, no dejar escapar excepciones). */
+async function runModuleTool(tool: ModuleTool, name: string, parsed: unknown, ctx: TurnContext): Promise<ToolRun> {
+  const validation = tool.schema.safeParse(parsed);
+  if (!validation.success) {
+    return {
+      name,
+      args: parsed,
+      result: { error: "argumentos_invalidos", detalle: validation.error.issues.map((i) => `${i.path.join(".") || "(raiz)"}: ${i.message}`) },
+    };
+  }
+  try {
+    return { name, args: validation.data, result: await tool.execute(validation.data, ctx) };
+  } catch (error) {
+    console.error(`[agent] error en la herramienta ${name}:`, error);
+    return {
+      name,
+      args: validation.data,
+      result: { error: "error_interno", instruccion: "Hubo un problema técnico. No inventes un resultado: disculpa y usa escalar_a_humano." },
+    };
+  }
+}
+
 /** Valida los argumentos que mando el modelo, ejecuta y nunca deja escapar una excepcion cruda. */
 export async function runTool(name: string, rawArgs: string, ctx: TurnContext): Promise<ToolRun> {
-  if (!(name in TOOLS)) {
-    return { name, args: rawArgs, result: { error: "herramienta_desconocida", disponibles: Object.keys(TOOLS) } };
+  const modules = activeModules(ctx.tenant);
+  const extra = findModuleTool(name);
+  // Desconocida, o de un modulo que este negocio no tiene: para el modelo es lo mismo (no existe para el).
+  if (!Object.hasOwn(TOOLS, name) && !extra) {
+    return { name, args: rawArgs, result: { error: "herramienta_desconocida", disponibles: availableToolNames(modules) } };
   }
-  const toolName = name as ToolName;
+  const owner = Object.hasOwn(TOOLS, name) ? CORE_TOOL_MODULE[name as ToolName] : extra!.module;
+  if (owner && !modules.includes(owner)) {
+    return { name, args: rawArgs, result: { error: "herramienta_desconocida", disponibles: availableToolNames(modules) } };
+  }
 
   let parsed: unknown;
   try {
@@ -1132,6 +1193,9 @@ export async function runTool(name: string, rawArgs: string, ctx: TurnContext): 
   } catch {
     return { name, args: rawArgs, result: { error: "argumentos_invalidos", detalle: "No es JSON válido" } };
   }
+
+  if (extra && !Object.hasOwn(TOOLS, name)) return runModuleTool(extra.tool, name, parsed, ctx);
+  const toolName = name as ToolName;
   const validation = schemas[toolName].safeParse(parsed);
   if (!validation.success) {
     return {

@@ -4,3 +4,4 @@ export * from "./session";
 export * from "./plans";
 export * from "./costs";
 export * from "./verticals";
+export * from "./modules";

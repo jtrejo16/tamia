@@ -1,4 +1,4 @@
-import { ensureConversation, humanAvailability, loadTurnContext, runTool, toolDefinitions, type TaskState } from "@empleado/agent";
+import { activeModules, ensureConversation, humanAvailability, loadTurnContext, runTool, toolDefinitions, type TaskState } from "@empleado/agent";
 import {
   agentConfigs,
   auditLog,
@@ -147,7 +147,7 @@ export async function syncVoiceAgent(
           },
         ]
       : []),
-    ...toolDefinitions()
+    ...toolDefinitions(activeModules(tenant))
       .filter((t) => wanted.has(t.function.name))
       .map((t): RetellTool => ({
         type: "custom",

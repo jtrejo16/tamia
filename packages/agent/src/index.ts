@@ -3,6 +3,7 @@ export * from "./context";
 export * from "./conversations";
 export * from "./prompt";
 export * from "./pack";
+export * from "./modules";
 export * from "./policy";
 export * from "./memory";
 export * from "./format";

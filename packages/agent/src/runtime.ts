@@ -26,6 +26,7 @@ import { and, count, desc, eq, gt, gte, isNull } from "drizzle-orm";
 import { formatLocal, toPlainText, toWhatsAppText } from "./format";
 import { claimsHandoff } from "./handoff-claim";
 import { MAX_RAW_HISTORY, maybeSummarize, messageText } from "./memory";
+import { activeModules } from "./modules";
 import { GENERIC_PACK, loadPack, type Pack } from "./pack";
 import { decideOutput, modeFor, type Autonomy } from "./policy";
 import { buildSystemPrompt } from "./prompt";
@@ -342,7 +343,7 @@ export async function runAgentTurn(input: RunTurnInput): Promise<TurnResult> {
   });
 
   const chat: ChatMessage[] = [{ role: "system", content: systemPrompt }, ...toChatHistory(loaded.history, now, tenant.timezone)];
-  const tools = toolDefinitions();
+  const tools = toolDefinitions(activeModules(tenant));
   const dataCollection = dataCollectionFor(tenant.vertical);
 
   const usage = emptyUsage();

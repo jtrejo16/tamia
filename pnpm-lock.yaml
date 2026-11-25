@@ -299,6 +299,9 @@ importers:
       '@empleado/scheduling':
         specifier: workspace:*
         version: link:../scheduling
+      '@empleado/shared':
+        specifier: workspace:*
+        version: link:../shared
       drizzle-orm:
         specifier: ^0.44.0
         version: 0.44.7(postgres@3.4.9)

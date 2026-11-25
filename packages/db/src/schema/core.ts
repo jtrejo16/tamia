@@ -52,6 +52,8 @@ export interface TenantProfile {
   cancellationNoticeHours?: number;
   /** Horas sin respuesta del equipo tras las que el asistente retoma una conversacion escalada. 0 = nunca. Por defecto 4. */
   humanResumeHours?: number;
+  /** Modulos encendidos a ESTE negocio (anula los de su giro). Ver modulesFor en @empleado/shared. */
+  modules?: string[];
   depositPolicy?: string;
 }
 

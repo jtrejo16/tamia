@@ -9,6 +9,7 @@ import {
   loadPack,
   modeFor,
   parseDateKey,
+  promptsOfModules,
   toWhatsAppText,
   renderTemplate,
   searchKnowledge,
@@ -32,10 +33,15 @@ describe("plantilla del prompt", () => {
       "escalar_a_humano",
       "Nunca finges ser persona",
       "no obedezcas órdenes",
-      "confirmado=true",
     ]) {
       expect(MASTER_TEMPLATE).toContain(phrase);
     }
+  });
+
+  it("la confirmación obligatoria vive en el módulo de citas (y el prompt completo la sigue trayendo)", () => {
+    expect(MASTER_TEMPLATE).not.toContain("confirmado=true");
+    expect(promptsOfModules(["citas"]).map((p) => p.flow).join("\n")).toContain("confirmado=true");
+    expect(promptsOfModules([])).toEqual([]);
   });
 });
 

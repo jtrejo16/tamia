@@ -24,6 +24,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
         role: ctx.role,
         tenantName: state.tenantName,
         timezone: state.timezone,
+        modules: state.modules,
         llmMode: llmMode(),
         isOperator: operator,
         access: {

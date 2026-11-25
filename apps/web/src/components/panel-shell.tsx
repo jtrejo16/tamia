@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { api, useLiveUpdates, usePolling } from "@/lib/client";
 import { PanelProvider, type PanelInfo } from "./panel-context";
 import { Badge, cx } from "./ui";
@@ -25,16 +25,36 @@ const ICONS = {
   cog: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z",
 };
 
-const ITEMS = [
-  { href: "/bandeja", label: "Bandeja", icon: ICONS.inbox, badge: "attention" as const },
-  { href: "/aprobaciones", label: "Aprobaciones", icon: ICONS.check, badge: "approvals" as const },
-  { href: "/citas", label: "Citas", icon: ICONS.calendar, badge: null },
+interface NavItem {
+  href: string;
+  label: string;
+  icon: string;
+  badge: "attention" | "approvals" | null;
+  /** Solo se muestra a los negocios que tienen este modulo. Sin valor: es del nucleo y siempre esta. */
+  module?: string;
+}
+
+const ITEMS: NavItem[] = [
+  { href: "/bandeja", label: "Bandeja", icon: ICONS.inbox, badge: "attention" },
+  { href: "/aprobaciones", label: "Aprobaciones", icon: ICONS.check, badge: "approvals" },
+  { href: "/citas", label: "Citas", icon: ICONS.calendar, badge: null, module: "citas" },
   { href: "/clientes", label: "Clientes", icon: ICONS.users, badge: null },
   { href: "/llamadas", label: "Llamadas", icon: ICONS.phone, badge: null },
   { href: "/estadisticas", label: "Estadísticas", icon: ICONS.chart, badge: null },
   { href: "/probador", label: "Probador", icon: ICONS.flask, badge: null },
   { href: "/configuracion", label: "Ajustes", icon: ICONS.cog, badge: null },
 ];
+
+/** Pantallas que aporta cada modulo (el de restaurante agregara Pedidos, Menu y Reservaciones). Van despues de «Aprobaciones». */
+const MODULE_NAV: Record<string, NavItem[]> = {};
+
+/** Menu del panel de un negocio: el nucleo, mas las pantallas de sus modulos. Con "citas" queda igual que siempre. */
+export function navFor(modules: readonly string[]): NavItem[] {
+  const base = ITEMS.filter((i) => !i.module || modules.includes(i.module));
+  const extra = modules.flatMap((m) => MODULE_NAV[m] ?? []);
+  const at = base.findIndex((i) => i.href === "/aprobaciones") + 1;
+  return [...base.slice(0, at), ...extra, ...base.slice(at)];
+}
 
 const ACCESS_TEXT: Record<string, string> = {
   tenant_pending: "Tu cuenta está en revisión; en cuanto la aprobemos empezará a responder. Mientras, puedes configurar tu negocio.",
@@ -59,6 +79,7 @@ function TrialNote({ iso, owner }: { iso: string; owner: boolean }) {
 
 export function PanelShell({ info, children }: { info: PanelInfo; children: ReactNode }) {
   const pathname = usePathname();
+  const nav = useMemo(() => navFor(info.modules), [info.modules]);
   useLiveUpdates();
   const { data: counts } = usePolling<{ ok: true; attention: number; approvals: number; worker: boolean; access?: { allowed: boolean; reason: string; trialEndsAt: string | null } }>("/api/summary", 6000);
   // La del servidor al cargar la pagina; la del resumen la mantiene al dia sin recargar (por ejemplo, al pagar).
@@ -94,7 +115,7 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
             </div>
           </div>
           <nav className="flex-1 space-y-1 px-3">
-            {ITEMS.map((item) => {
+            {nav.map((item) => {
               const active = pathname.startsWith(item.href);
               return (
                 <Link
@@ -170,7 +191,7 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
 
         {/* Barra inferior (celular) */}
         <nav className="flex overflow-x-auto border-t border-slate-200 bg-white lg:hidden">
-          {ITEMS.map((item) => {
+          {nav.map((item) => {
             const active = pathname.startsWith(item.href);
             const n = item.badge && counts ? counts[item.badge] : 0;
             return (

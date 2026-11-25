@@ -7,7 +7,7 @@ import {
   withUser,
   type Database,
 } from "@empleado/db";
-import { verifyAgainstDummy, verifyPassword, type SessionRole } from "@empleado/shared";
+import { modulesFor, verifyAgainstDummy, verifyPassword, type SessionRole } from "@empleado/shared";
 import { and, eq } from "drizzle-orm";
 
 export interface Login {
@@ -80,6 +80,8 @@ export type SessionState =
       email: string;
       tenantName: string;
       timezone: string;
+      /** Modulos del negocio (citas, restaurante...): deciden el menu del panel. */
+      modules: string[];
       mustChangePassword: boolean;
     }
   | { ok: false; reason: "revoked" | "no_membership" | "tenant_inactive" };
@@ -122,6 +124,7 @@ export async function getSessionState(
       email: user.email,
       tenantName: tenant.name,
       timezone: tenant.timezone,
+      modules: modulesFor(tenant.vertical, tenant.profile?.modules),
       mustChangePassword: user.mustChange,
     };
   });
