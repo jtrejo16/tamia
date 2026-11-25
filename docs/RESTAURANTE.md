@@ -1,8 +1,8 @@
 # Restaurante (módulo `restaurante`)
 
-Estado: **fase 5, giros de restaurante y primeros pasos.** El asistente contesta con el menú real y **toma pedidos para recoger en el local o a domicilio** (si el restaurante lo activa) por WhatsApp, Messenger e Instagram; el equipo los atiende en el tablero de **Pedidos**. Por **teléfono** el asistente informa el menú y, si se activa, también toma pedidos. Un restaurante se da de alta eligiendo su giro y arranca con un menú de ejemplo. Todavía **no** hay reservaciones.
+Estado: **fase 6, reservaciones por aforo.** El asistente contesta con el menú real y **toma pedidos para recoger en el local o a domicilio** (si el restaurante lo activa) por WhatsApp, Messenger e Instagram; el equipo los atiende en el tablero de **Pedidos**. Por **teléfono** el asistente informa el menú y, si se activa, también toma pedidos. Un restaurante se da de alta eligiendo su giro y arranca con un menú de ejemplo. Además toma **reservaciones de mesa por aforo** (si el restaurante las activa).
 
-Las fases siguientes (reservaciones por aforo, landing «Para restaurantes» y guion de demo) están en el plan de la conversación de diseño; este archivo se va llenando conforme se construyan.
+Las fases siguientes (landing «Para restaurantes» y guion de demo) están en el plan de la conversación de diseño; este archivo se va llenando conforme se construyan.
 
 ## Cómo se enciende para un negocio
 
@@ -79,6 +79,20 @@ El asistente telefónico (ver `docs/VOICE.md`) usa **las mismas herramientas y r
 
 **Sin probar con Retell real:** como el resto de la voz, se verificó con un Retell simulado. Conviene una llamada web de prueba antes de enseñarlo (ver el guion de demo, fase 7).
 
+## Reservaciones por aforo (fase 6)
+
+El restaurante dice **cuántos comensales caben a la vez** (aforo) y cada reservación ocupa los lugares de su grupo durante la estancia estimada. **No hay mesas**: se reserva mientras el grupo quepa en el aforo durante TODO el rato que ocuparía. Se enciende en *Reservaciones → Ajustes* (apagado por defecto); el código del cálculo está en `packages/agent/src/reservations.ts`.
+
+- **Ajustes** (recepción o dueño): aforo (por defecto 40), duración de la mesa (90 min), horas cada 15/30/60 min, grupo máximo (10; más grande lo atiende una persona), aviso mínimo (60 min), hasta cuántos días adelante (30) y minutos antes del cierre para la última reservación (60). Sin horario general cargado (Ajustes → Horarios) no se puede ofrecer nada: el asistente escala y el panel lo avisa.
+- **Las horas ofrecidas las calcula el código:** parten del horario del negocio (con turnos que cruzan la medianoche y días de cierre), cada «slot», hasta el cierre menos la última hora; descartan lo ya pasado, lo muy cercano (aviso mínimo), lo muy lejano y lo que no cabe. El cupo es el **pico real de comensales sentados a la vez** durante la estancia (dos reservaciones consecutivas no se suman). El asistente **nunca dice cuántos lugares quedan**.
+- **Agente** (texto y voz): `buscar_mesa` (día, personas y hora preferida → hasta cuatro horas libres, o por qué no hay y los próximos días con lugar), `crear_reservacion` (resumen primero; la confirmación debe llegar en un mensaje posterior, igual que citas y pedidos; pide nombre y teléfono), `mis_reservaciones` y `cancelar_reservacion` (solo antes de su hora). Se vuelve a revisar el cupo dentro de un candado por negocio al crear, así que dos clientes no se quedan con el mismo lugar. Repetir la misma reservación no la duplica. En modo copiloto van a Aprobaciones.
+- **Voz:** reservar por teléfono es un ajuste aparte (*Ajustes → Llamadas → «Permitir que reserve mesa por teléfono»*, solo dueño, apagado por defecto; hay que volver a sincronizar con Retell). Apagado, el asistente toma día, hora y personas y escala a una persona.
+- **Panel → Reservaciones:** agenda por día (con flechas, «Hoy» y selector de fecha) con reservaciones, comensales y **pico contra el aforo** (barra que se pone ámbar y roja), estados **confirmada → sentada → completada**, «no llegó» (solo después de su hora) y **cancelar con motivo**, que le avisa al cliente por su conversación (si ya pasaron 24 h o fue por llamada sin otro canal abierto, el panel dice que no se pudo notificar). Insignia en el menú con las confirmadas de hoy que aún no llegan.
+- **Nueva reservación a mano** (recepción o dueño): nombre, teléfono, día, hora, personas y nota. Da de alta al cliente si no existe (o usa al que ya tiene ese teléfono) y respeta el aforo; si el aforo no alcanza, ofrece «reservar de todos modos» y la reservación queda marcada como sobrecupo en la bitácora.
+- **Primeros pasos:** paso opcional «Reservaciones de mesa» (no cuenta en el porcentaje).
+
+No incluye: mesas ni plano del salón, recordatorios automáticos antes de la reservación, depósito o garantía con tarjeta, lista de espera ni cambiar una reservación (se cancela y se crea otra).
+
 ## Menú de ejemplo y primeros pasos (fase 5)
 
 **Menú de ejemplo.** Al registrarse con uno de los tres giros, el negocio nace con un menú de ejemplo realista (con modificadores): tacos con tortilla y extras y bebidas con tamaño en la taquería; pizzas con tamaño obligatorio, orilla y extras en la pizzería; entradas, platos fuertes, bebidas y postres en el restaurante. Los datos viven en `packages/shared/src/starter-menus.ts` y se cargan con `applyStarterMenu` (`packages/inbox/src/starter.ts`). Reglas:
@@ -113,7 +127,7 @@ Bebidas,Refresco,,25,no,
 
 Tablas del menú (migración `0026`; el menú de ejemplo se guarda en las mismas, sin tablas nuevas), todas con aislamiento por negocio (RLS): `menu_categories`, `menu_items`, `menu_modifier_groups`, `menu_modifier_options` y `menu_item_groups`. Los precios van en centavos de peso mexicano; no hay otra moneda por ahora. Los nombres son únicos sin distinguir mayúsculas (categoría por negocio, platillo por categoría, grupo por negocio, opción por grupo).
 
-Tablas de pedidos (migración `0027`, también con RLS; la `0028` suma `delivery_zones`, el estado «en camino» y los campos de domicilio en `orders` y `restaurant_settings`): `restaurant_settings`, `orders`, `order_items` y `order_item_modifiers`, más la función `orders_to_notify` (SECURITY DEFINER, solo devuelve ids). El pedido guarda el nombre y el precio de cada platillo **al momento de pedir**, así que cambiar o borrar un platillo del menú no altera pedidos ya hechos. Unir dos contactos duplicados también mueve sus pedidos.
+Reservaciones (migración `0030`, con RLS): tabla `reservations` y los ajustes de aforo dentro de `restaurant_settings`. Tablas de pedidos (migración `0027`, también con RLS; la `0028` suma `delivery_zones`, el estado «en camino» y los campos de domicilio en `orders` y `restaurant_settings`): `restaurant_settings`, `orders`, `order_items` y `order_item_modifiers`, más la función `orders_to_notify` (SECURITY DEFINER, solo devuelve ids). El pedido guarda el nombre y el precio de cada platillo **al momento de pedir**, así que cambiar o borrar un platillo del menú no altera pedidos ya hechos. Unir dos contactos duplicados también mueve sus pedidos.
 
 El código del menú vive en: `packages/db/src/schema/restaurant.ts` y `menu.ts` (lectura), `packages/inbox/src/menu.ts` y `csv.ts` (edición, importar y exportar), `packages/agent/src/restaurant.ts` (herramienta y prompt), `apps/web/src/components/menu-view.tsx` y `app/api/menu/` (panel). Pedidos: `packages/agent/src/orders.ts` y `restaurant.ts`, `packages/inbox/src/orders.ts`, `apps/worker/src/processors/orders.ts`, `apps/web/src/components/orders-view.tsx` y `app/api/orders/`.
 

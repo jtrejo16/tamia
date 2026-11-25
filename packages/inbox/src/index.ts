@@ -29,3 +29,5 @@ export * from "./voice-prompt";
 export * from "./orders";
 export * from "./starter";
 export * from "./onboarding";
+export * from "./notices";
+export * from "./reservations";

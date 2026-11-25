@@ -102,6 +102,15 @@ export interface RestaurantSettingsRow {
   deliveryMinutes: number;
   /** Envio gratis desde este subtotal (null = nunca). */
   freeDeliveryFromCents: number | null;
+  reservationsEnabled: boolean;
+  /** Comensales que caben al mismo tiempo. */
+  reservationsCapacity: number;
+  reservationsStayMinutes: number;
+  reservationsSlotMinutes: number;
+  reservationsMaxParty: number;
+  reservationsMinNoticeMinutes: number;
+  reservationsMaxDaysAhead: number;
+  reservationsLastSeatingMinutes: number;
 }
 
 export const DEFAULT_RESTAURANT_SETTINGS: RestaurantSettingsRow = {
@@ -113,6 +122,14 @@ export const DEFAULT_RESTAURANT_SETTINGS: RestaurantSettingsRow = {
   deliveryEnabled: false,
   deliveryMinutes: 40,
   freeDeliveryFromCents: null,
+  reservationsEnabled: false,
+  reservationsCapacity: 40,
+  reservationsStayMinutes: 90,
+  reservationsSlotMinutes: 30,
+  reservationsMaxParty: 10,
+  reservationsMinNoticeMinutes: 60,
+  reservationsMaxDaysAhead: 30,
+  reservationsLastSeatingMinutes: 60,
 };
 
 export async function loadRestaurantSettings(tx: Tx): Promise<RestaurantSettingsRow> {
@@ -127,6 +144,14 @@ export async function loadRestaurantSettings(tx: Tx): Promise<RestaurantSettings
     deliveryEnabled: row.deliveryEnabled,
     deliveryMinutes: row.deliveryMinutes,
     freeDeliveryFromCents: row.freeDeliveryFromCents,
+    reservationsEnabled: row.reservationsEnabled,
+    reservationsCapacity: row.reservationsCapacity,
+    reservationsStayMinutes: row.reservationsStayMinutes,
+    reservationsSlotMinutes: row.reservationsSlotMinutes,
+    reservationsMaxParty: row.reservationsMaxParty,
+    reservationsMinNoticeMinutes: row.reservationsMinNoticeMinutes,
+    reservationsMaxDaysAhead: row.reservationsMaxDaysAhead,
+    reservationsLastSeatingMinutes: row.reservationsLastSeatingMinutes,
   };
 }
 

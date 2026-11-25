@@ -1,5 +1,5 @@
 import { findRelatedContacts, type MatchReason } from "@empleado/agent";
-import { appointments, auditLog, calls, contactIdentities, contacts, conversations, channels, orders, services, staff, withTenant, type Database, type Tx } from "@empleado/db";
+import { appointments, auditLog, calls, contactIdentities, contacts, conversations, channels, orders, reservations, services, staff, withTenant, type Database, type Tx } from "@empleado/db";
 import { and, asc, eq, gte, inArray } from "drizzle-orm";
 import { can, fail, type Failure, type PanelContext, type Success } from "./types";
 
@@ -124,6 +124,7 @@ export async function mergeContacts(
     await tx.update(appointments).set({ contactId: keep.id }).where(eq(appointments.contactId, gone.id));
     await tx.update(calls).set({ contactId: keep.id }).where(eq(calls.contactId, gone.id));
     await tx.update(orders).set({ contactId: keep.id }).where(eq(orders.contactId, gone.id));
+    await tx.update(reservations).set({ contactId: keep.id }).where(eq(reservations.contactId, gone.id));
 
     // Perfil: lo del que se conserva manda; se agrega lo que solo tenia el otro. Las marcas de sugerencias se limpian.
     const keepProfile = { ...((keep.profile ?? {}) as Record<string, unknown>) };

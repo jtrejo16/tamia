@@ -18,14 +18,18 @@ export const VOICE_BOOKING_TOOLS = ["crear_cita", "reprogramar_cita", "cancelar_
 /** Solo si el negocio (restaurante) permite tomar pedidos por telefono. */
 export const VOICE_ORDER_TOOLS = ["crear_pedido", "estado_pedido", "cancelar_pedido"] as const;
 
+/** Solo si el negocio (restaurante) permite reservar mesa por telefono. */
+export const VOICE_RESERVATION_TOOLS = ["buscar_mesa", "crear_reservacion", "mis_reservaciones", "cancelar_reservacion"] as const;
+
 /** Herramientas propias de voz (no existen en el agente de texto). */
 export const VOICE_TRANSFER_CHECK = "puede_transferir";
 export const VOICE_TRANSFER_TOOL = "transferir_a_persona";
 
-export const voiceToolNames = (allowBooking: boolean, transfer = false, allowOrders = false): string[] => [
+export const voiceToolNames = (allowBooking: boolean, transfer = false, allowOrders = false, allowReservations = false): string[] => [
   ...VOICE_READ_TOOLS,
   ...(allowBooking ? VOICE_BOOKING_TOOLS : []),
   ...(allowOrders ? VOICE_ORDER_TOOLS : []),
+  ...(allowReservations ? VOICE_RESERVATION_TOOLS : []),
   ...(transfer ? [VOICE_TRANSFER_CHECK] : []),
 ];
 
@@ -36,8 +40,8 @@ export const DEFAULT_GREETING = (businessName: string, assistantName: string) =>
  * Prompt del agente de voz. Distinto al de WhatsApp: frases cortas, sin simbolos, horas habladas.
  * `{{current_time}}` lo rellena Retell en cada llamada.
  */
-export function buildVoicePrompt(input: { tenant: Tenant; config: AgentConfig; allowBooking: boolean; transfer?: boolean; allowOrders?: boolean }): string {
-  const { tenant, config, allowBooking, transfer = false, allowOrders = false } = input;
+export function buildVoicePrompt(input: { tenant: Tenant; config: AgentConfig; allowBooking: boolean; transfer?: boolean; allowOrders?: boolean; allowReservations?: boolean }): string {
+  const { tenant, config, allowBooking, transfer = false, allowOrders = false, allowReservations = false } = input;
   const modules = activeModules(tenant);
   const citas = modules.includes("citas");
   const restaurant = modules.includes("restaurante");
@@ -52,7 +56,18 @@ export function buildVoicePrompt(input: { tenant: Tenant; config: AgentConfig; a
     p.depositPolicy && `Anticipos: ${p.depositPolicy}`,
   ].filter(Boolean);
 
-  const restaurantRules = !restaurant
+  const reservationRules = allowReservations
+    ? `RESERVAR MESA POR TELÉFONO (solo si consultar_menu indica en info_de_pedidos que hay reservaciones; si no, di que no toman reservaciones y que puede llegar directo)
+- Necesitas el día, la hora aproximada y cuántas personas son. Calcula la fecha exacta en formato año-mes-día a partir de la fecha de hoy. Pregunta lo que falte, una cosa a la vez.
+- Busca con buscar_mesa y ofrece SOLO las horas que devuelve, máximo tres, dichas como se hablan ("a las ocho de la noche"). Si no hay lugar, ofrece los días con lugar que devuelve o que pase sin reservación. Nunca digas cuántos lugares quedan.
+- Necesitas su nombre (guárdalo con guardar_datos_contacto). El teléfono ya lo tienes si llama con su número visible; si no, pídelo número por número y repítelo.
+- Antes de crear la reservación, llama crear_reservacion SIN confirmado y repite el resumen en una frase corta (personas, día y hora). Pregunta "¿Te lo confirmo?" y espera su respuesta. Solo si dice que sí, llámala otra vez con los mismos datos y confirmado en verdadero.
+- Después dile su número de reservación, el día y la hora. Para consultar o cancelar usa mis_reservaciones y cancelar_reservacion.
+- Grupos grandes, eventos o una mesa específica: pasa a una persona con escalar_a_humano.`
+    : `RESERVACIONES (no se toman por teléfono)
+- Si quiere reservar mesa, toma su nombre, el día, la hora y cuántas personas son, y usa escalar_a_humano con todos esos datos en el motivo. Dile que una persona del equipo se la confirma.`;
+
+  const menuRules = !restaurant
     ? ""
     : allowOrders
       ? `MENÚ Y PEDIDOS POR TELÉFONO
@@ -71,6 +86,10 @@ export function buildVoicePrompt(input: { tenant: Tenant; config: AgentConfig; a
 - Platillos, precios, ingredientes y condiciones salen SOLO de consultar_menu. Del menú no leas listas largas: menciona las categorías o máximo tres platillos. Di los precios en pesos hablados.
 - Por teléfono NO tomas pedidos. Si quiere pedir, toma su nombre, qué quiere, si es para recoger o a domicilio (con dirección y colonia) y usa escalar_a_humano con todos esos datos en el motivo. Dile que una persona del equipo se lo confirma.
 - Alergias, intolerancias o dietas: no recomiendes nada que el menú no diga; pasa a una persona con escalar_a_humano.`;
+
+  const restaurantRules = restaurant ? `${menuRules}
+
+${reservationRules}` : "";
 
   const bookingRules = !citas
     ? ""

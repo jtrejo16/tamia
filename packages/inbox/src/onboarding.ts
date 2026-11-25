@@ -66,13 +66,14 @@ export async function getOnboarding(db: Database, ctx: PanelContext): Promise<On
         count(tx.select({ n: sql<number>`count(*)::int` }).from(restaurantSettings)),
         count(tx.select({ n: sql<number>`count(*)::int` }).from(deliveryZones).where(eq(deliveryZones.active, true))),
       ]);
-      const [rs] = await tx.select({ delivery: restaurantSettings.deliveryEnabled }).from(restaurantSettings);
+      const [rs] = await tx.select({ delivery: restaurantSettings.deliveryEnabled, reservations: restaurantSettings.reservationsEnabled }).from(restaurantSettings);
       const starter = profile.starterMenu ?? null;
       steps.push(
         { id: "menu", label: "Carga tu menú", hint: "Platillos, precios y modificadores. Puedes importar un CSV.", done: itemsN > 0, optional: false, href: "/menu" },
         ...(starter ? [{ id: "menu_reviewed", label: "Revisa el menú de ejemplo", hint: "Empezaste con un menú de ejemplo: cambia platillos y precios por los tuyos.", done: starter.reviewed, optional: false, href: "/menu" }] : []),
         { id: "orders", label: "Revisa tus ajustes de pedidos", hint: "Tiempo de preparación, pedido mínimo y formas de pago.", done: settingsN > 0, optional: false, href: "/pedidos" },
         { id: "delivery", label: "Entrega a domicilio", hint: "Si repartes, da de alta tus zonas y el costo de envío.", done: Boolean(rs?.delivery) && zonesN > 0, optional: true, href: "/pedidos" },
+        { id: "reservations", label: "Reservaciones de mesa", hint: "Si aceptas reservaciones, define tu aforo y tus reglas.", done: Boolean(rs?.reservations), optional: true, href: "/reservaciones" },
       );
     }
 

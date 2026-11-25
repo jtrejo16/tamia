@@ -31,7 +31,7 @@ interface NavItem {
   href: string;
   label: string;
   icon: string;
-  badge: "attention" | "approvals" | "orders" | "setup" | null;
+  badge: "attention" | "approvals" | "orders" | "reservations" | "setup" | null;
   /** Solo se muestra a los negocios que tienen este modulo. Sin valor: es del nucleo y siempre esta. */
   module?: string;
 }
@@ -54,6 +54,7 @@ const SETUP_ITEM: NavItem = { href: "/inicio", label: "Primeros pasos", icon: IC
 const MODULE_NAV: Record<string, NavItem[]> = {
   restaurante: [
     { href: "/pedidos", label: "Pedidos", icon: ICONS.bag, badge: "orders" },
+    { href: "/reservaciones", label: "Reservaciones", icon: ICONS.calendar, badge: "reservations" },
     { href: "/menu", label: "Menú", icon: ICONS.utensils, badge: null },
   ],
 };
@@ -91,7 +92,7 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
   const pathname = usePathname();
   const baseNav = useMemo(() => navFor(info.modules), [info.modules]);
   useLiveUpdates();
-  const { data: counts } = usePolling<{ ok: true; attention: number; approvals: number; orders?: number; setup?: number; worker: boolean; access?: { allowed: boolean; reason: string; trialEndsAt: string | null } }>("/api/summary", 6000);
+  const { data: counts } = usePolling<{ ok: true; attention: number; approvals: number; orders?: number; reservations?: number; setup?: number; worker: boolean; access?: { allowed: boolean; reason: string; trialEndsAt: string | null } }>("/api/summary", 6000);
   // «Primeros pasos» va primero mientras el avance no llegue a 100 %.
   const nav = useMemo(() => (counts?.setup !== undefined && counts.setup < 100 ? [SETUP_ITEM, ...baseNav] : baseNav), [baseNav, counts?.setup]);
   // La del servidor al cargar la pagina; la del resumen la mantiene al dia sin recargar (por ejemplo, al pagar).
@@ -103,7 +104,7 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
     window.location.href = "/login";
   }
 
-  const badge = (key: "attention" | "approvals" | "orders" | "setup" | null) => {
+  const badge = (key: "attention" | "approvals" | "orders" | "reservations" | "setup" | null) => {
     const n = key && counts ? (counts[key] ?? 0) : 0;
     if (key === "setup") {
       return (

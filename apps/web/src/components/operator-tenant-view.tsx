@@ -338,6 +338,7 @@ Se cambian las instrucciones del asistente. Los servicios, las preguntas frecuen
           <Row label="Transferencia a recepción" value={d.voice.transferNumber || "—"} />
           <Row label="Agenda por teléfono" value={<OnOff ok={d.voice.allowBooking} on="Sí" off="No" />} />
           <Row label="Pedidos por teléfono" value={<OnOff ok={d.voice.allowOrders} on="Sí" off="No" />} />
+          <Row label="Reservaciones por teléfono" value={<OnOff ok={d.voice.allowReservations} on="Sí" off="No" />} />
           {!d.voice.retellConfigured && <p className="mt-2 text-xs text-amber-700">Retell no está configurado en el servidor.</p>}
         </Card>
 

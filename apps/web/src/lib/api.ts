@@ -26,6 +26,7 @@ const MESSAGES: Record<string, string> = {
   same_contact: "Elige dos clientes distintos.",
   phone_taken: "Ese teléfono ya pertenece a otro cliente.",
   module_off: "Esta función no está activada para tu negocio.",
+  sin_cupo: "No hay lugar a esa hora con el aforo configurado.",
   duplicate: "Ya existe uno con ese nombre.",
   bad_session: "Sesión de prueba inválida.",
   invalid_credentials: "Correo o contraseña incorrectos.",
@@ -125,6 +126,7 @@ const STATUS: Record<string, number> = {
   same_contact: 400,
   phone_taken: 409,
   module_off: 403,
+  sin_cupo: 409,
   duplicate: 409,
 };
 

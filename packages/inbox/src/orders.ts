@@ -1,11 +1,8 @@
 import {
   auditLog,
-  channels,
-  conversations,
   deliveryZones,
   loadDeliveryZones,
   loadRestaurantSettings,
-  messages,
   orderItemModifiers,
   orderItems,
   orders,
@@ -19,9 +16,9 @@ import {
   type RestaurantSettingsRow,
   type Tx,
 } from "@empleado/db";
-import { isWithinServiceWindow } from "@empleado/channels";
 import { hasModule, modulesFor } from "@empleado/shared";
-import { and, asc, desc, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { sendCustomerNotice, type NoticeResult } from "./notices";
 import { can, fail, type EnqueueOutbound, type Failure, type PanelContext, type Success } from "./types";
 
 /**
@@ -34,7 +31,7 @@ export type OrderError = "forbidden" | "module_off" | "not_found" | "invalid_tra
 
 const scope = (ctx: PanelContext) => ({ tenantId: ctx.tenantId, userId: ctx.userId });
 
-async function gate(tx: Tx, ctx: PanelContext, write: boolean): Promise<Failure<"forbidden" | "module_off"> | null> {
+export async function restaurantGate(tx: Tx, ctx: PanelContext, write: boolean): Promise<Failure<"forbidden" | "module_off"> | null> {
   if (write && !can(ctx.role, "manage_appointments")) return fail("forbidden");
   const [t] = await tx.select({ vertical: tenants.vertical, profile: tenants.profile }).from(tenants).where(eq(tenants.id, ctx.tenantId));
   if (!t || !hasModule(modulesFor(t.vertical, t.profile?.modules), "restaurante")) return fail("module_off");
@@ -83,7 +80,7 @@ const HISTORY_LIMIT = 100;
 /** "active": nuevos, en preparacion y listos (lo que la cocina tiene en curso). "history": entregados y cancelados de la ultima semana. */
 export async function listOrders(db: Database, ctx: PanelContext, which: OrderScope, now: Date = new Date()): Promise<Success<{ orders: OrderView[] }> | Failure<"module_off">> {
   return withTenant(db, scope(ctx), async (tx) => {
-    if (await gate(tx, ctx, false)) return fail("module_off" as const);
+    if (await restaurantGate(tx, ctx, false)) return fail("module_off" as const);
     const rows =
       which === "active"
         ? await tx.select().from(orders).where(inArray(orders.status, ["new", "preparing", "ready", "on_the_way"])).orderBy(asc(orders.createdAt)).limit(200)
@@ -162,8 +159,6 @@ function nextStates(status: OrderStatus, mode: string): OrderStatus[] {
   }
 }
 
-export type NoticeResult = "sent" | "window_closed" | "no_conversation" | "voice" | "not_needed";
-
 export type SetStatusResult = {
   status: OrderStatus;
   /** Si se le escribio al cliente del cambio. */
@@ -183,7 +178,7 @@ export async function setOrderStatus(
 ): Promise<Success<SetStatusResult> | Failure<OrderError>> {
   const reason = input.reason?.trim().slice(0, 200) || null;
   const outcome = await withTenant(db, scope(ctx), async (tx) => {
-    const denied = await gate(tx, ctx, true);
+    const denied = await restaurantGate(tx, ctx, true);
     if (denied) return denied;
     const [order] = await tx.select().from(orders).where(eq(orders.id, orderId));
     if (!order) return fail("not_found" as const);
@@ -224,38 +219,9 @@ export async function setOrderStatus(
           : to === "on_the_way"
             ? `¡Tu pedido #${order.number} va en camino a tu domicilio! Total a pagar: ${money(order.totalCents)}.`
             : `Tu pedido #${order.number} fue cancelado por el restaurante${reason ? `: ${reason}` : ""}. Disculpa las molestias; si quieres, escríbenos y lo resolvemos.`;
-      // Una llamada no se contesta por texto: si el cliente tambien nos escribe por otro canal (WhatsApp...) y su ventana de
-      // 24 h sigue abierta, el aviso va por ahi. Si no, el cambio se guarda y el panel avisa que no se pudo notificar.
-      type Target = { id: string; channelId: string; lastInboundAt: Date | null };
-      let target: Target | null = null;
-      let reachedBy: NoticeResult | null = null;
-      if (!order.conversationId) reachedBy = "no_conversation";
-      else {
-        const [conv] = await tx.select().from(conversations).where(eq(conversations.id, order.conversationId));
-        const [channel] = conv ? await tx.select({ type: channels.type }).from(channels).where(eq(channels.id, conv.channelId)) : [];
-        if (!conv) reachedBy = "no_conversation";
-        else if (channel?.type === "voice") {
-          const [alt] = await tx
-            .select({ id: conversations.id, channelId: conversations.channelId, lastInboundAt: conversations.lastInboundAt })
-            .from(conversations)
-            .innerJoin(channels, eq(channels.id, conversations.channelId))
-            .where(and(eq(conversations.contactId, order.contactId), ne(channels.type, "voice"), isNotNull(conversations.lastInboundAt)))
-            .orderBy(desc(conversations.lastInboundAt))
-            .limit(1);
-          if (alt && isWithinServiceWindow(alt.lastInboundAt, now)) target = alt;
-          else reachedBy = "voice";
-        } else if (!isWithinServiceWindow(conv.lastInboundAt, now)) reachedBy = "window_closed";
-        else target = { id: conv.id, channelId: conv.channelId, lastInboundAt: conv.lastInboundAt };
-      }
-      if (target) {
-        const [msg] = await tx
-          .insert(messages)
-          .values({ tenantId: ctx.tenantId, conversationId: target.id, channelId: target.channelId, direction: "out", sender: "human", type: "text", body: text, status: "queued" })
-          .returning({ id: messages.id });
-        await tx.update(conversations).set({ lastMessageAt: now, updatedAt: now }).where(eq(conversations.id, target.id));
-        messageId = msg!.id;
-        notice = "sent";
-      } else notice = reachedBy ?? "no_conversation";
+      const sent = await sendCustomerNotice(tx, { tenantId: ctx.tenantId, contactId: order.contactId, conversationId: order.conversationId, text, now });
+      notice = sent.notice;
+      messageId = sent.messageId;
     }
     return { ok: true as const, status: to, notice, messageId };
   });
@@ -271,7 +237,7 @@ export type SettingsView = { settings: RestaurantSettingsRow; zones: DeliveryZon
 
 export async function getRestaurantSettings(db: Database, ctx: PanelContext): Promise<Success<SettingsView> | Failure<"module_off">> {
   return withTenant(db, scope(ctx), async (tx) => {
-    if (await gate(tx, ctx, false)) return fail("module_off" as const);
+    if (await restaurantGate(tx, ctx, false)) return fail("module_off" as const);
     return { ok: true as const, settings: await loadRestaurantSettings(tx), zones: await loadDeliveryZones(tx) };
   });
 }
@@ -333,7 +299,7 @@ export async function saveRestaurantSettings(db: Database, ctx: PanelContext, in
   if (errors.length > 0) return { ok: false, error: "invalid", details: errors };
 
   return withTenant(db, scope(ctx), async (tx) => {
-    const denied = await gate(tx, ctx, true);
+    const denied = await restaurantGate(tx, ctx, true);
     if (denied) return denied;
     const effectiveZones = zonesIn ?? (await loadDeliveryZones(tx));
     if (deliveryEnabled && !effectiveZones.some((z) => z.active)) return { ok: false as const, error: "invalid" as const, details: ["Para ofrecer entrega a domicilio agrega al menos una zona activa."] };

@@ -6,6 +6,7 @@ export * from "./pack";
 export * from "./modules";
 import "./restaurant"; // registra el modulo de restaurante (herramientas y prompt)
 export { consultMenu } from "./restaurant";
+export * from "./reservations";
 export * from "./policy";
 export * from "./memory";
 export * from "./format";

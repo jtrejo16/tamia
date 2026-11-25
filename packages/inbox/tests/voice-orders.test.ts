@@ -1,4 +1,4 @@
-import { contacts, conversations, menuCategories, menuItems, messages, orders, subscriptions, tenants } from "@empleado/db";
+import { contacts, conversations, menuCategories, menuItems, messages, orders, reservations, restaurantSettings, subscriptions, tenants } from "@empleado/db";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RetellClient, buildVoicePrompt, handleCallEvent, runVoiceTool, saveVoiceSettings, setOrderStatus, syncVoiceAgent, voiceToolNames, type RetellCall } from "../src";
@@ -33,7 +33,7 @@ function fakeRetell() {
 const PHONE = "+529981112233";
 
 /** Un restaurante con voz activada, con o sin permiso para tomar pedidos, y su agente ya creado en Retell. */
-async function voiceRestaurant(opts: { allowOrders: boolean; modules?: string[] }) {
+async function voiceRestaurant(opts: { allowOrders: boolean; allowReservations?: boolean; modules?: string[] }) {
   const w = await makeWorld(dbs.owner);
   worlds.push(w);
   const db = dbs.owner.db;
@@ -42,7 +42,8 @@ async function voiceRestaurant(opts: { allowOrders: boolean; modules?: string[] 
   await db.update(contacts).set({ phoneE164: PHONE, displayName: "Laura" }).where(eq(contacts.id, w.contactId));
   const [cat] = await db.insert(menuCategories).values({ tenantId: w.tenantId, name: "Tacos" }).returning();
   const [pastor] = await db.insert(menuItems).values({ tenantId: w.tenantId, categoryId: cat!.id, name: "Pastor", priceCents: 1800 }).returning();
-  expect(await saveVoiceSettings(dbs.app.db, w.owner, { enabled: true, allowBooking: false, allowOrders: opts.allowOrders, voiceId: "voz-es-mx", phoneNumber: "+529981110000" })).toEqual({ ok: true });
+  expect(await saveVoiceSettings(dbs.app.db, w.owner, { enabled: true, allowBooking: false, allowOrders: opts.allowOrders, allowReservations: opts.allowReservations ?? false, voiceId: "voz-es-mx", phoneNumber: "+529981110000" })).toEqual({ ok: true });
+  await db.insert(restaurantSettings).values({ tenantId: w.tenantId, reservationsEnabled: true, reservationsCapacity: 20 });
   const { client, calls } = fakeRetell();
   const sync = await syncVoiceAgent(dbs.app.db, client, w.owner, { baseUrl: "https://panel.test" });
   if (!sync.ok) throw new Error(`sync fallo: ${sync.error}`);
@@ -171,5 +172,53 @@ describe("pedidos por llamada", () => {
     const second = await dbs.owner.db.insert(orders).values({ ...o!, id: undefined as never, number: 2, status: "new", idempotencyKey: null, notifiedAt: null }).returning();
     const late = await setOrderStatus(dbs.app.db, w.owner, second[0]!.id, "ready", {}, enqueue, NOW);
     expect(late).toMatchObject({ ok: true, notice: "voice" });
+  });
+});
+
+describe("reservaciones por llamada", () => {
+  const base = (modules: string[]) => ({ tenant: { name: "Taquería Don Pepe", timezone: "America/Merida", profile: { modules }, slug: "x", vertical: "dental" } as never, config: { assistantName: "Sofi", tone: "cálido", formality: "tu", escalationRules: [], forbiddenTopics: [] } as never });
+
+  it("con permiso: busca horas, confirma de viva voz y no dice cuantos lugares quedan; sin permiso: toma los datos y escala", () => {
+    const on = buildVoicePrompt({ ...base(["restaurante"]), allowBooking: false, allowOrders: false, allowReservations: true });
+    expect(on).toContain("RESERVAR MESA POR TELÉFONO");
+    expect(on).toContain("buscar_mesa");
+    expect(on).toContain("crear_reservacion SIN confirmado");
+    expect(on).toContain("Nunca digas cuántos lugares quedan");
+    const off = buildVoicePrompt({ ...base(["restaurante"]), allowBooking: false, allowOrders: true, allowReservations: false });
+    expect(off).toContain("RESERVACIONES (no se toman por teléfono)");
+    expect(off).not.toContain("crear_reservacion");
+    expect(off).toContain("MENÚ Y PEDIDOS POR TELÉFONO"); // los pedidos y las reservaciones se activan por separado
+    expect(buildVoicePrompt({ ...base(["citas"]), allowBooking: true })).not.toContain("RESERV");
+    expect(voiceToolNames(false)).not.toContain("buscar_mesa");
+    expect(voiceToolNames(false, false, false, true)).toEqual(expect.arrayContaining(["buscar_mesa", "crear_reservacion", "mis_reservaciones", "cancelar_reservacion"]));
+  });
+
+  it("Retell recibe las funciones solo si se permite; la reservacion exige que el cliente conteste y queda por el canal de voz", async () => {
+    const { w, agentId, retellCalls } = await voiceRestaurant({ allowOrders: false, allowReservations: true });
+    const names = (retellCalls.find((c) => c.path === "/create-retell-llm")!.body.general_tools as Array<{ name: string }>).map((t) => t.name);
+    expect(names).toEqual(expect.arrayContaining(["buscar_mesa", "crear_reservacion", "mis_reservaciones", "cancelar_reservacion"]));
+    expect(names).not.toContain("crear_pedido");
+
+    const c = callOf(agentId);
+    await handleCallEvent(dbs.app.db, { event: "call_started", call: c });
+    const found = await tool(c, "buscar_mesa", { fecha: "2027-03-02", personas: 4, hora_preferida: "13:00" });
+    expect(found.horas_disponibles).toContain("13:00");
+
+    const args = { fecha: "2027-03-02", hora: "13:00", personas: 4 };
+    const t0 = new Date(NOW.getTime());
+    expect((await tool(turns(c, 1), "crear_reservacion", args, t0)).requiere_confirmacion).toBe(true);
+    expect((await tool(turns(c, 1), "crear_reservacion", { ...args, confirmado: true }, new Date(t0.getTime() + 2000))).error).toBe("falta_confirmacion");
+    expect(await tool(turns(c, 2), "crear_reservacion", { ...args, confirmado: true }, new Date(t0.getTime() + 9000))).toMatchObject({ ok: true, reservacion_numero: 1, personas: 4 });
+    const [r] = await dbs.owner.db.select().from(reservations).where(eq(reservations.tenantId, w.tenantId));
+    expect(r).toMatchObject({ channel: "voice", customerName: "Laura", customerPhone: PHONE, partySize: 4, status: "confirmed" });
+    expect((await tool(turns(c, 2), "mis_reservaciones", {}, new Date(t0.getTime() + 12000))).reservaciones[0]).toMatchObject({ reservacion_numero: 1 });
+  });
+
+  it("sin permiso para reservar por teléfono, las herramientas de reservacion se rechazan", async () => {
+    const { agentId } = await voiceRestaurant({ allowOrders: true, allowReservations: false });
+    const c = callOf(agentId);
+    await handleCallEvent(dbs.app.db, { event: "call_started", call: c });
+    expect((await tool(c, "buscar_mesa", { fecha: "2027-03-02", personas: 2 })).error).toBe("herramienta_no_permitida");
+    expect((await tool(c, "crear_reservacion", { fecha: "2027-03-02", hora: "13:00", personas: 2, confirmado: true })).error).toBe("herramienta_no_permitida");
   });
 });

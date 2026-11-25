@@ -134,9 +134,26 @@ export const restaurantSettings = pgTable(
     deliveryMinutes: integer("delivery_minutes").notNull().default(40),
     /** Envio gratis desde este subtotal (null = nunca es gratis). */
     freeDeliveryFromCents: integer("free_delivery_from_cents"),
+    /** Reservaciones por aforo: el asistente reserva mientras quepan los comensales en el restaurante. */
+    reservationsEnabled: boolean("reservations_enabled").notNull().default(false),
+    /** Comensales que caben al mismo tiempo (aforo). */
+    reservationsCapacity: integer("reservations_capacity").notNull().default(40),
+    /** Cuanto se calcula que dura una mesa (minutos): una reservacion ocupa su lugar todo ese tiempo. */
+    reservationsStayMinutes: integer("reservations_stay_minutes").notNull().default(90),
+    /** Cada cuantos minutos se ofrece una hora (15, 30 o 60). */
+    reservationsSlotMinutes: integer("reservations_slot_minutes").notNull().default(30),
+    /** Grupos mas grandes los atiende una persona. */
+    reservationsMaxParty: integer("reservations_max_party").notNull().default(10),
+    /** Aviso minimo antes de la hora reservada. */
+    reservationsMinNoticeMinutes: integer("reservations_min_notice_minutes").notNull().default(60),
+    /** Hasta cuantos dias adelante se puede reservar. */
+    reservationsMaxDaysAhead: integer("reservations_max_days_ahead").notNull().default(30),
+    /** La ultima hora para llegar es la del cierre menos estos minutos. */
+    reservationsLastSeatingMinutes: integer("reservations_last_seating_minutes").notNull().default(60),
     ...timestamps,
   },
   (t) => [
+    check("restaurant_settings_reservations_range", sql`${t.reservationsCapacity} between 1 and 2000 and ${t.reservationsStayMinutes} between 30 and 480 and ${t.reservationsSlotMinutes} in (15, 30, 60) and ${t.reservationsMaxParty} between 1 and 100 and ${t.reservationsMinNoticeMinutes} between 0 and 10080 and ${t.reservationsMaxDaysAhead} between 1 and 365 and ${t.reservationsLastSeatingMinutes} between 0 and 480`),
     check("restaurant_settings_prep_range", sql`${t.prepMinutes} between 5 and 240`),
     check("restaurant_settings_delivery_range", sql`${t.deliveryMinutes} between 10 and 240`),
     check("restaurant_settings_min_nonneg", sql`${t.minOrderCents} >= 0`),
@@ -253,4 +270,51 @@ export const orderItemModifiers = pgTable(
     priceDeltaCents: integer("price_delta_cents").notNull().default(0),
   },
   (t) => [index("order_item_modifiers_item_idx").on(t.orderItemId)],
+);
+
+// --------------------------------------------------------------------------------------- reservaciones
+
+export const RESERVATION_STATUSES = ["confirmed", "seated", "completed", "cancelled", "no_show"] as const;
+export type ReservationStatus = (typeof RESERVATION_STATUSES)[number];
+
+/** Una reservacion de mesa. Ocupa `partySize` lugares del aforo entre `startsAt` y `endsAt` mientras este confirmada o sentada. */
+export const reservations = pgTable(
+  "reservations",
+  {
+    id: pk(),
+    tenantId: tenantRef(),
+    /** Numero corto y consecutivo por negocio: "Reservación #12". */
+    number: integer("number").notNull(),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references(() => contacts.id),
+    conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+    /** whatsapp | messenger | instagram | voice | panel */
+    channel: text("channel").notNull(),
+    status: text("status").$type<ReservationStatus>().notNull().default("confirmed"),
+    customerName: text("customer_name").notNull(),
+    customerPhone: text("customer_phone"),
+    partySize: integer("party_size").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    notes: text("notes"),
+    seatedAt: timestamp("seated_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelReason: text("cancel_reason"),
+    /** cliente | equipo */
+    cancelledBy: text("cancelled_by"),
+    /** bot (asistente) | panel (alguien del equipo) */
+    createdBy: text("created_by").notNull().default("bot"),
+    /** Huella de la solicitud: evita crearla dos veces si se repite la confirmacion. */
+    idempotencyKey: text("idempotency_key"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("reservations_tenant_number_uq").on(t.tenantId, t.number),
+    index("reservations_tenant_starts_idx").on(t.tenantId, t.startsAt),
+    index("reservations_contact_idx").on(t.contactId),
+    check("reservations_status_valid", sql`${t.status} in ('confirmed', 'seated', 'completed', 'cancelled', 'no_show')`),
+    check("reservations_party_range", sql`${t.partySize} between 1 and 100`),
+    check("reservations_interval_valid", sql`${t.endsAt} > ${t.startsAt}`),
+  ],
 );

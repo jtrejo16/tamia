@@ -140,11 +140,12 @@ describe("primeros pasos (lista de arranque)", () => {
   it("una taqueria recien creada: menu cargado, falta revisarlo y lo demas; el avance sube al completar cada paso", async () => {
     const { ctx, tenantId } = await register("taqueria");
     let v = await getOnboarding(dbs.app.db, ctx);
-    expect(v.steps.map((s) => s.id)).toEqual(["business", "hours", "channel", "alerts", "menu", "menu_reviewed", "orders", "delivery"]);
+    expect(v.steps.map((s) => s.id)).toEqual(["business", "hours", "channel", "alerts", "menu", "menu_reviewed", "orders", "delivery", "reservations"]);
     expect(v.steps.map((s) => s.id)).not.toContain("services"); // sin modulo de citas
     expect(step(v, "menu")!.done).toBe(true);
     expect(step(v, "menu_reviewed")!.done).toBe(false);
     expect(step(v, "delivery")!.optional).toBe(true);
+    expect(step(v, "reservations")!.optional).toBe(true);
     expect(v).toMatchObject({ doneCount: 1, total: 7, percent: 14, starterMenu: { template: "taqueria", reviewed: false } });
 
     // Revisar el menu (cambiar cualquier cosa) lo marca como revisado.

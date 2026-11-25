@@ -24,6 +24,7 @@ import { and, asc, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { formatLocal, formatMoney } from "./format";
 import { defineModuleTool, registerModulePrompt, registerModuleTools } from "./modules";
+import { RESERVATION_TOOLS } from "./reservation-tools";
 import { cartKey, deliveryQuote, describeLine, matchZone, openStatus, priceCart } from "./orders";
 import { confirmationGate, finishMutation, proposeAction } from "./tools";
 import type { ToolResult, TurnContext } from "./types";
@@ -53,6 +54,9 @@ function orderInfo(s: RestaurantSettingsRow, zones: DeliveryZoneRow[] = []): Rec
     tiempo_de_preparacion_minutos: s.prepMinutes,
     ...(s.minOrderCents > 0 ? { pedido_minimo: money(s.minOrderCents) } : {}),
     para_recoger_en_el_local: true,
+    ...(s.reservationsEnabled
+      ? { reservaciones: { disponibles: true, grupo_maximo: s.reservationsMaxParty, aviso_minimo_minutos: s.reservationsMinNoticeMinutes, hasta_dias_adelante: s.reservationsMaxDaysAhead } }
+      : { reservaciones: "no disponibles" }),
     ...(delivery
       ? {
           a_domicilio: {
@@ -446,16 +450,19 @@ registerModuleTools("restaurante", [
   crearPedido,
   estadoPedido,
   cancelarPedido,
+  ...RESERVATION_TOOLS,
 ]);
 
 registerModulePrompt("restaurante", {
   tasks: [
     "- Responder dudas del menú (platillos, precios, ingredientes y modificadores) usando consultar_menu.",
     "- Tomar pedidos para recoger en el local o a domicilio (si el restaurante lo ofrece), consultar su estado y cancelarlos mientras no se preparen.",
+    "- Reservar mesa (si el restaurante lo ofrece), consultar las reservaciones del cliente y cancelarlas.",
   ],
   truthRules: [
     "Platillos, precios, ingredientes y modificadores salen SOLO de consultar_menu. Si un platillo no aparece, no existe: no lo ofrezcas ni inventes alternativas. Si está agotado, dilo y ofrece otra cosa del menú.",
     "Nunca inventes ingredientes ni alérgenos. Si preguntan por alergias, intolerancias o dietas y el menú no lo dice, escala a una persona antes de recomendar algo.",
+    "Una reservación solo existe si crear_reservacion la confirmó con su número de reservación. Las horas disponibles salen SOLO de buscar_mesa: nunca ofrezcas una hora que esa herramienta no devolvió ni digas cuántos lugares quedan.",
     `Un pedido solo existe si crear_pedido lo confirmó con su número de pedido. Nunca digas "ya quedó tu pedido" sin ese resultado. Los totales los da el sistema: nunca los calcules tú.`,
   ],
   flow: `CONSULTAR EL MENÚ:
@@ -471,6 +478,13 @@ TOMAR UN PEDIDO (para recoger en el local o, solo si info_de_pedidos.a_domicilio
 4. ANTES de crear: llama crear_pedido SIN confirmado para obtener el resumen con el total, repítelo completo al cliente y pide confirmación explícita. Solo cuando responda que sí, vuelve a llamarla con los mismos datos y confirmado=true.
 5. Confirma usando el resultado real: dile su número de pedido, el total (con envío si es a domicilio) y en cuánto tiempo estará listo o llegará. Si paga por transferencia, dale los datos.
 6. Si pregunta "¿ya está mi pedido?", usa estado_pedido. Para cancelar, cancelar_pedido (solo si aún no se prepara; si ya empezó, díselo y pásalo con una persona).
-7. Si el sistema dice que están cerrados o que no toman pedidos por ahora, díselo con amabilidad y no insistas.`,
+7. Si el sistema dice que están cerrados o que no toman pedidos por ahora, díselo con amabilidad y no insistas.
+
+RESERVAR MESA (solo si info_de_pedidos.reservaciones dice que hay; si no, dile que no toman reservaciones y que puede llegar directo):
+1. Necesitas el día, la hora aproximada y cuántas personas son. Calcula la fecha exacta (AAAA-MM-DD) a partir de «hoy». Pregunta lo que falte, una cosa a la vez.
+2. Busca con buscar_mesa y ofrece SOLO las horas que devuelve (máximo tres o cuatro). Si no hay lugar, ofrece los días con lugar que devuelve o que pase sin reservación.
+3. Pide el nombre (guárdalo con guardar_datos_contacto) y, si pide algo especial (cumpleaños, silla para bebé), anótalo en las notas.
+4. Llama crear_reservacion SIN confirmado, repite el resumen y pide confirmación explícita; solo cuando responda que sí, vuelve a llamarla con los mismos datos y confirmado=true. Después dile su número de reservación, el día y la hora.
+5. Para ver o cancelar usa mis_reservaciones y cancelar_reservacion. Si el grupo es más grande de lo que permite el restaurante, o quiere un evento o una mesa específica, pásalo con una persona (escalar_a_humano).`,
   escalation: "ALERGIAS Y DIETAS: una alergia o intolerancia siempre se escala a una persona antes de recomendar un platillo.",
 });
