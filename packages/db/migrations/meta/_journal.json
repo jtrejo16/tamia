@@ -183,6 +183,13 @@
       "when": 1795631290634,
       "tag": "0025_operator_set_vertical",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1795632017124,
+      "tag": "0026_restaurant_menu",
+      "breakpoints": true
     }
   ]
 }

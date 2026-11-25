@@ -4,7 +4,7 @@ Jovia tiene un **núcleo** que todos los negocios usan y **módulos** que se enc
 
 - **Núcleo (siempre está):** conversaciones, clientes, canales (WhatsApp, Messenger, Instagram, voz), avisos al equipo, estadísticas, base de conocimiento, y las herramientas del agente para horario, datos del cliente, ubicación y escalar a una persona.
 - **Módulo `citas`:** servicios, especialistas, agenda, recordatorios y las herramientas `consultar_servicios`, `buscar_disponibilidad`, `crear_cita`, `buscar_citas_del_contacto`, `reprogramar_cita` y `cancelar_cita`. Lo tienen todos los giros actuales.
-- **Módulo `restaurante`:** (todavía sin contenido) menú, pedidos y reservaciones por aforo.
+- **Módulo `restaurante`:** menú (la herramienta `consultar_menu`, la pantalla Menú y sus tablas). Pedidos y reservaciones por aforo vienen después. Ver `docs/RESTAURANTE.md`.
 
 ## Qué módulos tiene un negocio
 

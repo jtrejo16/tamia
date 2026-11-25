@@ -25,6 +25,8 @@ const MESSAGES: Record<string, string> = {
   contacto_no_encontrado: "No se encontró al cliente.",
   same_contact: "Elige dos clientes distintos.",
   phone_taken: "Ese teléfono ya pertenece a otro cliente.",
+  module_off: "Esta función no está activada para tu negocio.",
+  duplicate: "Ya existe uno con ese nombre.",
   bad_session: "Sesión de prueba inválida.",
   invalid_credentials: "Correo o contraseña incorrectos.",
   no_membership: "Tu usuario no pertenece a ningún negocio.",
@@ -122,6 +124,8 @@ const STATUS: Record<string, number> = {
   contacto_no_encontrado: 404,
   same_contact: 400,
   phone_taken: 409,
+  module_off: 403,
+  duplicate: 409,
 };
 
 export function failure(error: string, extra: Record<string, unknown> = {}): NextResponse {

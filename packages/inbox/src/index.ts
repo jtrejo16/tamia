@@ -13,6 +13,7 @@ export * from "./mercadopago";
 export * from "./operator";
 export * from "./contact-link";
 export * from "./customers";
+export * from "./menu";
 export * from "./email";
 export * from "./manual-booking";
 export * from "./notifications";
