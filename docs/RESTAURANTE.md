@@ -1,8 +1,8 @@
 # Restaurante (módulo `restaurante`)
 
-Estado: **fase 6, reservaciones por aforo.** El asistente contesta con el menú real y **toma pedidos para recoger en el local o a domicilio** (si el restaurante lo activa) por WhatsApp, Messenger e Instagram; el equipo los atiende en el tablero de **Pedidos**. Por **teléfono** el asistente informa el menú y, si se activa, también toma pedidos. Un restaurante se da de alta eligiendo su giro y arranca con un menú de ejemplo. Además toma **reservaciones de mesa por aforo** (si el restaurante las activa).
+Estado: **fase 7 (última del plan): portada «Para restaurantes» y guion de demo.** El asistente contesta con el menú real y **toma pedidos para recoger en el local o a domicilio** (si el restaurante lo activa) por WhatsApp, Messenger e Instagram; el equipo los atiende en el tablero de **Pedidos**. Por **teléfono** el asistente informa el menú y, si se activa, también toma pedidos. Un restaurante se da de alta eligiendo su giro y arranca con un menú de ejemplo. Además toma **reservaciones de mesa por aforo** (si el restaurante las activa).
 
-Las fases siguientes (landing «Para restaurantes» y guion de demo) están en el plan de la conversación de diseño; este archivo se va llenando conforme se construyan.
+El plan de la conversación de diseño quedó completo. Para enseñarlo a un prospecto, ver `docs/DEMO-RESTAURANTES.md`.
 
 ## Cómo se enciende para un negocio
 
@@ -78,6 +78,12 @@ El asistente telefónico (ver `docs/VOICE.md`) usa **las mismas herramientas y r
 - Un negocio solo de restaurante no recibe en su prompt de voz nada de citas ni de urgencias dentales; con los dos módulos lleva ambos bloques. Un negocio de citas queda igual que antes.
 
 **Sin probar con Retell real:** como el resto de la voz, se verificó con un Retell simulado. Conviene una llamada web de prueba antes de enseñarlo (ver el guion de demo, fase 7).
+
+## Portada «Para restaurantes» y demo (fase 7)
+
+- **`/restaurantes`** (pública, indexable; con sesión redirige al panel): qué hace, cómo se ve el tablero (ilustración), los tres giros, cómo empezar, **lo que Jovia es y lo que todavía no es** (sin pagos en línea, sin punto de venta, sin rastreo, zonas por colonia, aforo sin mesas), precio y preguntas frecuentes. Sus botones llevan a `/registro?giro=taqueria|pizzeria|restaurante`, que **llega con el giro ya elegido** (un giro desconocido se ignora). La portada general enlaza a ella desde el menú y desde la sección de giros.
+- **Operador → «Preparar demostración»** (`operatorPrepareDemo`, `packages/inbox/src/demo.ts`, solo operador y solo negocios con el módulo de restaurante): llena **solo lo que falta** y es idempotente. Carga el menú de ejemplo si el menú está vacío, un horario de todos los días de 13:00 a 23:00 si no hay horario general, tres zonas de entrega si no hay ninguna (Centro $30; Norte y Sur $45 con pedido mínimo de $150) y, si el negocio nunca guardó ajustes de pedidos, enciende domicilio (envío gratis desde $300) y reservaciones (aforo 30). Nunca pisa lo que el negocio ya configuró y deja constancia en la bitácora.
+- **`docs/DEMO-RESTAURANTES.md`:** preparación del negocio de demo, guion de 10 minutos con los mensajes de ejemplo y qué enseñar en el panel, qué hacer si algo falla, preguntas de prospectos y **lo que no se promete**.
 
 ## Reservaciones por aforo (fase 6)
 

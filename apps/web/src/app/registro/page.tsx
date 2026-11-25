@@ -1,13 +1,17 @@
 import { PLANS, PLAN_IDS, TRIAL_DAYS } from "@empleado/shared/plans";
 import { redirect } from "next/navigation";
+import { VERTICAL_IDS } from "@empleado/shared/verticals";
 import { SignupForm } from "@/components/signup-form";
 import { getValidSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Crear cuenta · Jovia" };
 
-export default async function SignupPage() {
+export default async function SignupPage({ searchParams }: { searchParams: Promise<{ giro?: string }> }) {
   if (await getValidSession()) redirect("/bandeja");
+  // Las portadas por giro (por ejemplo «Para restaurantes») mandan aqui con el giro ya elegido: /registro?giro=taqueria
+  const giro = (await searchParams).giro;
+  const initialVertical = (VERTICAL_IDS as readonly string[]).includes(giro ?? "") ? giro : undefined;
   return (
     <main className="flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -18,7 +22,7 @@ export default async function SignupPage() {
             Un asistente que atiende y agenda por WhatsApp. Sin tarjeta para empezar; desde ${PLANS[PLAN_IDS[0]!].priceMxn} MXN al mes después.
           </p>
         </div>
-        <SignupForm />
+        <SignupForm initialVertical={initialVertical} />
         <p className="mt-4 text-center text-sm text-slate-500">
           ¿Ya tienes cuenta? <a href="/login" className="font-medium text-teal-700 hover:underline">Inicia sesión</a>
         </p>

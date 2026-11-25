@@ -1,6 +1,7 @@
 "use client";
 
 import type { TenantDetail } from "@empleado/inbox";
+import { modulesFor } from "@empleado/shared/modules";
 import { VERTICALS } from "@empleado/shared/verticals";
 import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -125,6 +126,18 @@ export function OperatorTenantView({ tenantId }: { tenantId: string }) {
 
   const giroLabel = (id: string) => VERTICALS.find((v) => v.id === id)?.label ?? id;
 
+  /** Restaurante: llena lo que falte para ensenarlo (menu de ejemplo, horario, zonas, pedidos y reservaciones). */
+  async function prepareDemo() {
+    setBusy("demo");
+    setNotice(null);
+    const res = await api<{ ok: true; menu: boolean; hours: boolean; zones: number; settings: boolean }>("/api/operator/demo", { method: "POST", body: { tenantId } });
+    setBusy(null);
+    if (!res.ok) return setNotice({ tone: "rose", text: res.message });
+    const done = [res.menu && "menú de ejemplo", res.hours && "horario (todos los días 13:00 a 23:00)", res.zones > 0 && `${res.zones} zonas de entrega`, res.settings && "domicilio y reservaciones encendidos"].filter(Boolean);
+    setNotice(done.length > 0 ? { tone: "green", text: `Demostración lista ✓ Se agregó: ${done.join(", ")}.` } : { tone: "amber", text: "Ya estaba todo configurado: no se cambió nada." });
+    await reload();
+  }
+
   async function changeVertical(name: string, from: string, to: string) {
     const ok = window.confirm(
       `¿Cambiar el giro de ${name} de «${giroLabel(from)}» a «${giroLabel(to)}»?
@@ -207,6 +220,9 @@ Se cambian las instrucciones del asistente. Los servicios, las preguntas frecuen
         </select>
         <Button variant="secondary" className="px-3 py-1.5" loading={busy === "giro"} disabled={(verticalPick ?? c.vertical) === c.vertical} onClick={() => changeVertical(c.name, c.vertical, verticalPick ?? c.vertical)}>Cambiar giro</Button>
         <span className="text-xs text-slate-400">Cambia las instrucciones del asistente; los servicios y las preguntas no cambian.</span>
+        {modulesFor(c.vertical).includes("restaurante") && (
+          <Button variant="secondary" className="px-3 py-1.5" loading={busy === "demo"} onClick={prepareDemo}>Preparar demostración</Button>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

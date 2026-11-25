@@ -13,8 +13,8 @@ const TIMEZONES = [
   { id: "America/Hermosillo", label: "Hermosillo" },
 ];
 
-export function SignupForm() {
-  const [form, setForm] = useState({ businessName: "", vertical: "", ownerName: "", email: "", password: "", timezone: "America/Merida" });
+export function SignupForm({ initialVertical }: { initialVertical?: string } = {}) {
+  const [form, setForm] = useState({ businessName: "", vertical: initialVertical ?? "", ownerName: "", email: "", password: "", timezone: "America/Merida" });
   const [error, setError] = useState<{ text: string; details?: string[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm((p) => ({ ...p, [k]: e.target.value }));

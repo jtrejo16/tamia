@@ -31,3 +31,4 @@ export * from "./starter";
 export * from "./onboarding";
 export * from "./notices";
 export * from "./reservations";
+export * from "./demo";

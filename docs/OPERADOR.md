@@ -67,3 +67,6 @@ Salud, cobro (con **extender la prueba** 3/7/14/30 días), aprobar / pausar / co
 - No se registra un historial de pagos individuales ni facturas (CFDI).
 - Alertas automáticas (correo/WhatsApp cuando un cliente falla o vence): solo se ven al abrir la pantalla.
 - Exportar a Excel.
+
+## Preparar demostración (restaurantes)
+En el detalle de un cliente con giro de restaurante (taquería, pizzería o restaurante) hay un botón **Preparar demostración**: carga lo que falte para enseñarlo (menú de ejemplo, horario, zonas de entrega, y enciende domicilio y reservaciones). Solo llena lo que está vacío; no pisa lo que el negocio ya configuró. Ver `docs/DEMO-RESTAURANTES.md`.
