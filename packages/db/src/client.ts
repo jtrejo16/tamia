@@ -249,6 +249,14 @@ export async function operatorSetTenantStatus(db: Database, userId: string, tena
   });
 }
 
+/** Cambia el giro de un negocio (los dos campos a la vez). Devuelve el giro anterior, o null si el negocio no existe. */
+export async function operatorSetVertical(db: Database, userId: string, tenantId: string, vertical: string): Promise<string | null> {
+  return asOperator(db, userId, async (tx) => {
+    const rows = await tx.execute<{ previous: string | null }>(sql`select operator_set_vertical(${tenantId}, ${vertical}) as previous`);
+    return rows[0]?.previous ?? null;
+  });
+}
+
 export async function operatorSetComped(db: Database, userId: string, tenantId: string, on: boolean): Promise<boolean> {
   return asOperator(db, userId, async (tx) => {
     const rows = await tx.execute<{ ok: boolean }>(sql`select operator_set_comped(${tenantId}, ${on}) as ok`);

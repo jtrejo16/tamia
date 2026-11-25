@@ -1,6 +1,7 @@
 "use client";
 
 import type { TenantDetail } from "@empleado/inbox";
+import { VERTICALS } from "@empleado/shared/verticals";
 import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, usePolling } from "@/lib/client";
@@ -89,6 +90,7 @@ export function OperatorTenantView({ tenantId }: { tenantId: string }) {
   const [pages, setPages] = useState<Array<{ pageId: string; name: string; instagram: { username: string | null } | null }> | null>(null);
   const [pick, setPick] = useState<{ pageId: string; messenger: boolean; instagram: boolean }>({ pageId: "", messenger: true, instagram: true });
   const [trialDays, setTrialDays] = useState(7);
+  const [verticalPick, setVerticalPick] = useState<string | null>(null);
   const [showStats, setShowStats] = useState(false);
 
   // Al volver de Facebook: ?fb=<resultado> (pick = elegir pagina).
@@ -120,6 +122,30 @@ export function OperatorTenantView({ tenantId }: { tenantId: string }) {
     },
     [tenantId, reload],
   );
+
+  const giroLabel = (id: string) => VERTICALS.find((v) => v.id === id)?.label ?? id;
+
+  async function changeVertical(name: string, from: string, to: string) {
+    const ok = window.confirm(
+      `¿Cambiar el giro de ${name} de «${giroLabel(from)}» a «${giroLabel(to)}»?
+
+Se cambian las instrucciones del asistente. Los servicios, las preguntas frecuentes y el conocimiento NO cambian: edítalos en los Ajustes del negocio.`,
+    );
+    if (!ok) return;
+    setBusy("giro");
+    setNotice(null);
+    const res = await api<{ ok: true; changed: boolean; privacyChanged: boolean }>("/api/operator/vertical", { method: "POST", body: { tenantId, vertical: to } });
+    setBusy(null);
+    if (!res.ok) setNotice({ tone: "rose", text: res.message });
+    else if (!res.changed) setNotice({ tone: "amber", text: "El negocio ya tenía ese giro." });
+    else
+      setNotice({
+        tone: res.privacyChanged ? "amber" : "green",
+        text: `Giro cambiado a «${giroLabel(to)}» ✓${res.privacyChanged ? " Ojo: cambió la política de datos con el modelo de IA (los giros de salud van con restricción; los demás no)." : ""}`,
+      });
+    setVerticalPick(null);
+    await reload();
+  }
 
   async function runCheck() {
     setBusy("check");
@@ -161,7 +187,7 @@ export function OperatorTenantView({ tenantId }: { tenantId: string }) {
             <Badge tone={st.tone}>{st.label}</Badge>
             <Badge tone={b.tone}>{b.label}</Badge>
           </div>
-          <p className="text-sm text-slate-500">{c.ownerName ?? "—"} · {c.ownerEmail ?? "sin dueño"} · plan {c.plan} · {c.vertical} · alta {dayLabel(c.createdAt)} · {c.timezone}</p>
+          <p className="text-sm text-slate-500">{c.ownerName ?? "—"} · {c.ownerEmail ?? "sin dueño"} · plan {c.plan} · {giroLabel(c.vertical)} · alta {dayLabel(c.createdAt)} · {c.timezone}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {c.status !== "active" && <Button className="px-3 py-1.5" loading={busy === "st-a"} onClick={() => act("st-a", "/api/operator/status", { status: "active" }, c.status === "pending" ? "Cliente aprobado ✓" : "Cliente reactivado ✓")}>{c.status === "pending" ? "Aprobar" : "Reactivar"}</Button>}
@@ -172,6 +198,16 @@ export function OperatorTenantView({ tenantId }: { tenantId: string }) {
       </div>
 
       {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
+
+      <div className="flex flex-wrap items-center gap-2 rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+        <label htmlFor="giro" className="text-sm font-medium text-slate-700">Giro</label>
+        <select id="giro" value={verticalPick ?? c.vertical} onChange={(e) => setVerticalPick(e.target.value)} className="rounded-lg bg-white px-2 py-1.5 text-sm ring-1 ring-slate-300">
+          {!VERTICALS.some((v) => v.id === c.vertical) && <option value={c.vertical}>{c.vertical}</option>}
+          {VERTICALS.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+        </select>
+        <Button variant="secondary" className="px-3 py-1.5" loading={busy === "giro"} disabled={(verticalPick ?? c.vertical) === c.vertical} onClick={() => changeVertical(c.name, c.vertical, verticalPick ?? c.vertical)}>Cambiar giro</Button>
+        <span className="text-xs text-slate-400">Cambia las instrucciones del asistente; los servicios y las preguntas no cambian.</span>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* ---- salud */}

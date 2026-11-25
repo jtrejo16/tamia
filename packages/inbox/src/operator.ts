@@ -3,9 +3,12 @@ import {
   operatorListTenants,
   operatorSetComped,
   operatorSetTenantStatus,
+  operatorSetVertical,
   type Database,
   type OperatorTenantRow,
 } from "@empleado/db";
+import { dataCollectionFor } from "@empleado/llm";
+import { VERTICAL_IDS } from "@empleado/shared";
 import { fail, type Failure, type Success } from "./types";
 
 /**
@@ -23,6 +26,24 @@ export async function operatorChangeStatus(db: Database, userId: string, tenantI
   if (status !== "active" && status !== "paused" && status !== "cancelled") return fail("invalid");
   if (!(await isOperator(db, userId))) return fail("forbidden");
   return (await operatorSetTenantStatus(db, userId, tenantId, status)) ? { ok: true } : fail("not_found");
+}
+
+/**
+ * Cambia el giro de un negocio: su giro y el pack de instrucciones del asistente, juntos. NO toca servicios, preguntas
+ * frecuentes ni conocimiento (siguen siendo los del giro anterior). `privacyChanged` avisa si cambia la politica de datos con el
+ * modelo de IA (los giros de salud van con restriccion y los demas no).
+ */
+export async function operatorChangeVertical(
+  db: Database,
+  userId: string,
+  tenantId: string,
+  vertical: unknown,
+): Promise<Success<{ previous: string; changed: boolean; privacyChanged: boolean }> | Failure<OperatorError>> {
+  if (typeof vertical !== "string" || !(VERTICAL_IDS as readonly string[]).includes(vertical)) return fail("invalid");
+  if (!(await isOperator(db, userId))) return fail("forbidden");
+  const previous = await operatorSetVertical(db, userId, tenantId, vertical);
+  if (previous === null) return fail("not_found");
+  return { ok: true, previous, changed: previous !== vertical, privacyChanged: dataCollectionFor(previous) !== dataCollectionFor(vertical) };
 }
 
 export async function operatorChangeComped(db: Database, userId: string, tenantId: string, on: boolean): Promise<Success | Failure<OperatorError>> {

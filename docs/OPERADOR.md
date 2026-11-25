@@ -53,6 +53,7 @@ Salud, cobro (con **extender la prueba** 3/7/14/30 días), aprobar / pausar / co
 - **Messenger / Instagram:** **Conectar con Facebook** inicia sesión con **tu** cuenta de Facebook y eliges la página del cliente. Funciona solo si tu cuenta administra esa página: pídele al cliente que te agregue en Meta (Business Manager → Páginas → Agregar personas). No hace falta su contraseña. También puedes desconectar.
 - **Comprobar conexiones ahora:** pregunta a Meta con la clave guardada si la clave sigue válida y la página sigue suscrita a los mensajes.
 - **Llamadas:** estado y **sincronizar con Retell**. **Plantillas:** estado y sincronizar con Meta. **Google Calendar:** estado.
+- **Giro:** el selector «Giro» con el botón **Cambiar giro** mueve al negocio a otro de los giros disponibles. Cambia **a la vez** el giro y el pack de instrucciones del asistente, y deja constancia en la bitácora (`operator.set_vertical`, con el giro anterior y el nuevo). **No toca** los servicios, las preguntas frecuentes ni el conocimiento: siguen siendo los del giro anterior y se editan en los Ajustes del negocio. Avisa si cambia la política de datos con el modelo de IA: los giros `dental`, `salud` y `medico` van con restricción, los demás no. Si el negocio ya tiene ese giro, no hace nada. Solo acepta los giros de la lista del registro.
 - Además: equipo con acceso, mensajes fallidos recientes con su motivo, **bitácora** (quién hizo qué) y las **estadísticas completas** del cliente.
 
 ## Cómo funciona el soporte (y su seguridad)
