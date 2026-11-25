@@ -77,7 +77,7 @@ function actionKey(tool: string, args: Record<string, unknown>): string {
  *    un mensaje posterior del cliente (no en el mismo turno en que se propuso).
  * Devuelve un resultado para el modelo si todavia NO se puede ejecutar, o null si procede.
  */
-function confirmationGate(
+export function confirmationGate(
   ctx: TurnContext,
   tool: string,
   args: Record<string, unknown>,
@@ -117,13 +117,13 @@ function confirmationGate(
   };
 }
 
-function finishMutation(ctx: TurnContext): void {
+export function finishMutation(ctx: TurnContext): void {
   delete ctx.taskState.pendingAction;
   ctx.usedMutation = true;
 }
 
 /** En modo "dry" registra la propuesta en vez de escribir. */
-function proposeAction(ctx: TurnContext, action: ProposedAction): ToolResult {
+export function proposeAction(ctx: TurnContext, action: ProposedAction): ToolResult {
   ctx.proposedActions.push(action);
   finishMutation(ctx);
   return {

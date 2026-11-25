@@ -45,8 +45,8 @@ describe("consultar el menu", () => {
     }
     const hawaiana = ((await consultMenu(MENU, "hawaiana")) as { resultados: Array<Record<string, any>> }).resultados[0]!;
     expect(hawaiana.modificadores).toEqual([
-      { nombre: "Tamaño", obligatorio: true, una_sola_opcion: true, opciones: [{ nombre: "Chica" }, { nombre: "Grande", extra: "+$60 MXN" }] },
-      { nombre: "Extras", obligatorio: false, varias_opciones: true, maximo: 3, opciones: [{ nombre: "Queso", extra: "+$15 MXN" }, { nombre: "Piña", extra: "+$12 MXN", agotada: true }] },
+      { nombre: "Tamaño", obligatorio: true, una_sola_opcion: true, opciones: [{ opcion_id: "o1", nombre: "Chica" }, { opcion_id: "o2", nombre: "Grande", extra: "+$60 MXN" }] },
+      { nombre: "Extras", obligatorio: false, varias_opciones: true, maximo: 3, opciones: [{ opcion_id: "o3", nombre: "Queso", extra: "+$15 MXN" }, { opcion_id: "o4", nombre: "Piña", extra: "+$12 MXN", agotada: true }] },
     ]);
   });
 

@@ -16,7 +16,7 @@ const MESSAGES: Record<string, string> = {
   already_reviewed: "Este borrador ya fue revisado por alguien más.",
   conversation_in_human_control: "Una persona tiene el control de esta conversación.",
   actions_failed: "No se pudo ejecutar lo que proponía el asistente. No se envió nada.",
-  invalid_transition: "Ese cambio de estado no es válido para esta cita.",
+  invalid_transition: "Ese cambio de estado ya no es posible (puede que alguien más lo haya cambiado). Actualiza la pantalla.",
   slot_taken: "Ese horario ya está ocupado.",
   horario_no_disponible: "Ese horario ya no está libre. Elige otro.",
   servicio_no_encontrado: "Ese servicio ya no existe o está desactivado.",

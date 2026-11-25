@@ -1,6 +1,6 @@
 import { asc } from "drizzle-orm";
 import type { Tx } from "./client";
-import { menuCategories, menuItemGroups, menuItems, menuModifierGroups, menuModifierOptions } from "./schema";
+import { menuCategories, menuItemGroups, menuItems, menuModifierGroups, menuModifierOptions, restaurantSettings } from "./schema";
 
 /**
  * El menu de un negocio leido completo (modulo "restaurante"). Un menu cabe en memoria (decenas o pocos cientos de
@@ -89,4 +89,27 @@ export async function loadMenu(tx: Tx): Promise<MenuData> {
       options: optionsBy.get(g.id) ?? [],
     })),
   };
+}
+
+/** Ajustes de pedidos del restaurante. Si el negocio nunca los guardo, valen estos. */
+export interface RestaurantSettingsRow {
+  acceptingOrders: boolean;
+  prepMinutes: number;
+  minOrderCents: number;
+  paymentMethods: string[];
+  transferInfo: string | null;
+}
+
+export const DEFAULT_RESTAURANT_SETTINGS: RestaurantSettingsRow = {
+  acceptingOrders: true,
+  prepMinutes: 25,
+  minOrderCents: 0,
+  paymentMethods: ["efectivo", "tarjeta"],
+  transferInfo: null,
+};
+
+export async function loadRestaurantSettings(tx: Tx): Promise<RestaurantSettingsRow> {
+  const [row] = await tx.select().from(restaurantSettings).limit(1);
+  if (!row) return { ...DEFAULT_RESTAURANT_SETTINGS };
+  return { acceptingOrders: row.acceptingOrders, prepMinutes: row.prepMinutes, minOrderCents: row.minOrderCents, paymentMethods: row.paymentMethods, transferInfo: row.transferInfo };
 }

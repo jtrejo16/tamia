@@ -116,6 +116,12 @@ export async function handoffsToNotify(db: Database, limit = 50): Promise<Array<
   return rows.map((r) => ({ tenantId: r.tenant_id, handoffId: r.handoff_id }));
 }
 
+/** Pedidos nuevos de los que toca avisar al equipo por correo (de negocios con avisos encendidos). Solo ids. */
+export async function ordersToNotify(db: Database, limit = 50): Promise<Array<{ tenantId: string; orderId: string }>> {
+  const rows = await db.execute<{ tenant_id: string; order_id: string }>(sql`select * from orders_to_notify(${limit})`);
+  return rows.map((r) => ({ tenantId: r.tenant_id, orderId: r.order_id }));
+}
+
 /** Citas a las que toca pedirles resena (de negocios con la funcion encendida). Solo ids. */
 export async function reviewsDue(db: Database, now: Date, limit = 50): Promise<Array<{ tenantId: string; appointmentId: string }>> {
   const rows = await db.execute<{ tenant_id: string; appointment_id: string }>(sql`select * from reviews_due(${now.toISOString()}::timestamptz, ${limit})`);

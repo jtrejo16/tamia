@@ -1,6 +1,7 @@
-import { boolean, check, index, integer, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { pk, tenantRef, timestamps } from "./core";
+import { contacts, conversations } from "./channels";
 
 /**
  * Modulo "restaurante": el menu. Los precios van en centavos de peso mexicano (MXN).
@@ -100,4 +101,118 @@ export const menuItemGroups = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [uniqueIndex("menu_item_groups_uq").on(t.itemId, t.groupId), index("menu_item_groups_tenant_idx").on(t.tenantId, t.groupId)],
+);
+
+// ------------------------------------------------------------------------------------------ pedidos
+
+/** Estados de un pedido: nuevo → preparando → listo → entregado (o cancelado en cualquier punto antes de entregar). */
+export const ORDER_STATUSES = ["new", "preparing", "ready", "delivered", "cancelled"] as const;
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
+export const PAYMENT_METHODS = ["efectivo", "tarjeta", "transferencia"] as const;
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
+/** Ajustes del restaurante para pedidos (uno por negocio). Si no hay fila, valen los de por defecto. */
+export const restaurantSettings = pgTable(
+  "restaurant_settings",
+  {
+    id: pk(),
+    tenantId: tenantRef().unique(),
+    /** false = pedidos pausados (la cocina esta saturada): el asistente no toma pedidos nuevos. */
+    acceptingOrders: boolean("accepting_orders").notNull().default(true),
+    /** Minutos que se le dicen al cliente que tardara su pedido. */
+    prepMinutes: integer("prep_minutes").notNull().default(25),
+    minOrderCents: integer("min_order_cents").notNull().default(0),
+    paymentMethods: text("payment_methods").array().notNull().default(["efectivo", "tarjeta"]),
+    /** Datos para pagar por transferencia (CLABE, titular), si se acepta. */
+    transferInfo: text("transfer_info"),
+    ...timestamps,
+  },
+  (t) => [
+    check("restaurant_settings_prep_range", sql`${t.prepMinutes} between 5 and 240`),
+    check("restaurant_settings_min_nonneg", sql`${t.minOrderCents} >= 0`),
+  ],
+);
+
+/** Un pedido, venga del canal que venga (WhatsApp, Messenger, Instagram, llamada o panel). */
+export const orders = pgTable(
+  "orders",
+  {
+    id: pk(),
+    tenantId: tenantRef(),
+    /** Numero corto y consecutivo por negocio: "Pedido #12". */
+    number: integer("number").notNull(),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references(() => contacts.id),
+    conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
+    /** whatsapp | messenger | instagram | voice | panel */
+    channel: text("channel").notNull(),
+    /** pickup (recoger). La entrega a domicilio llega despues. */
+    mode: text("mode").notNull().default("pickup"),
+    status: text("status").$type<OrderStatus>().notNull().default("new"),
+    /** Datos del cliente al momento de pedir (el contacto puede cambiar despues). */
+    customerName: text("customer_name").notNull(),
+    customerPhone: text("customer_phone"),
+    notes: text("notes"),
+    paymentMethod: text("payment_method").$type<PaymentMethod>().notNull(),
+    subtotalCents: integer("subtotal_cents").notNull(),
+    totalCents: integer("total_cents").notNull(),
+    estimatedReadyAt: timestamp("estimated_ready_at", { withTimezone: true }),
+    preparingAt: timestamp("preparing_at", { withTimezone: true }),
+    readyAt: timestamp("ready_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelReason: text("cancel_reason"),
+    /** cliente | equipo */
+    cancelledBy: text("cancelled_by"),
+    /** Huella del carrito: evita crear dos veces el mismo pedido si se repite la confirmacion. */
+    idempotencyKey: text("idempotency_key"),
+    /** Cuando se le aviso al equipo (correo) de este pedido nuevo. */
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    notifyAttempts: integer("notify_attempts").notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("orders_tenant_number_uq").on(t.tenantId, t.number),
+    index("orders_tenant_status_idx").on(t.tenantId, t.status, t.createdAt),
+    index("orders_contact_idx").on(t.contactId),
+    check("orders_status_valid", sql`${t.status} in ('new', 'preparing', 'ready', 'delivered', 'cancelled')`),
+    check("orders_totals_nonneg", sql`${t.subtotalCents} >= 0 and ${t.totalCents} >= 0`),
+  ],
+);
+
+export const orderItems = pgTable(
+  "order_items",
+  {
+    id: pk(),
+    tenantId: tenantRef(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    /** El platillo del menu (null si despues se borra del menu: el pedido conserva su nombre y precio). */
+    menuItemId: uuid("menu_item_id").references(() => menuItems.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    unitPriceCents: integer("unit_price_cents").notNull(),
+    quantity: integer("quantity").notNull(),
+    /** Precio de esta partida: (precio base + modificadores) × cantidad. */
+    lineTotalCents: integer("line_total_cents").notNull(),
+    notes: text("notes"),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("order_items_order_idx").on(t.orderId), check("order_items_quantity_range", sql`${t.quantity} between 1 and 50`)],
+);
+
+export const orderItemModifiers = pgTable(
+  "order_item_modifiers",
+  {
+    id: pk(),
+    tenantId: tenantRef(),
+    orderItemId: uuid("order_item_id")
+      .notNull()
+      .references(() => orderItems.id, { onDelete: "cascade" }),
+    groupName: text("group_name").notNull(),
+    optionName: text("option_name").notNull(),
+    priceDeltaCents: integer("price_delta_cents").notNull().default(0),
+  },
+  (t) => [index("order_item_modifiers_item_idx").on(t.orderItemId)],
 );

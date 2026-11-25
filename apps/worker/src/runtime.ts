@@ -10,6 +10,7 @@ import { sweepStaleMessages } from "./outbox";
 import { createInboundProcessor } from "./processors/inbound";
 import { createOutboundProcessor, type Sender } from "./processors/outbound";
 import { createNotificationScanner } from "./processors/notifications";
+import { createOrderScanner } from "./processors/orders";
 import { createReminderScanner } from "./processors/reminders";
 import { createReviewScanner } from "./processors/reviews";
 import { createStatusProcessor } from "./processors/status";
@@ -150,12 +151,14 @@ export function startSystem(config: WorkerConfig, system: WorkerSystem): () => v
     log,
   });
   const scanReviews = createReviewScanner({ db: db.db, enqueueOutbound: enqueue.outbound, log });
+  const scanOrders = createOrderScanner({ db: db.db, email, baseUrl: process.env.PUBLIC_BASE_URL?.trim() || null, log });
   let scanningExtras = false;
   const extras = setInterval(() => {
     if (scanningExtras) return;
     scanningExtras = true;
     Promise.all([
       scanNotifications().then((r) => r.sent + r.errors > 0 && log("notifications.scan", r)),
+      scanOrders().then((r) => r.sent + r.errors > 0 && log("orders.scan", r)),
       scanReviews().then((r) => {
         if (r.sent + r.errors > 0) {
           log("reviews.scan", r);

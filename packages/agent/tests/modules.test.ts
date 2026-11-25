@@ -36,7 +36,7 @@ describe("herramientas por modulo", () => {
 
   it("sin el modulo de citas quedan solo las del nucleo", () => {
     expect(names([])).toEqual(NUCLEO);
-    expect(names(["restaurante"])).toEqual([...NUCLEO, "consultar_menu"]); // restaurante aporta la consulta del menu
+    expect(names(["restaurante"])).toEqual([...NUCLEO, "consultar_menu", "crear_pedido", "estado_pedido", "cancelar_pedido"]); // restaurante aporta el menu y los pedidos
     for (const n of CITAS) expect(names([])).not.toContain(n);
   });
 
