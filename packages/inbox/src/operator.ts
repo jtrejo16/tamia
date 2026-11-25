@@ -7,6 +7,7 @@ import {
   type Database,
   type OperatorTenantRow,
 } from "@empleado/db";
+import { applyStarterMenu } from "./starter";
 import { dataCollectionFor } from "@empleado/llm";
 import { VERTICAL_IDS } from "@empleado/shared";
 import { fail, type Failure, type Success } from "./types";
@@ -38,12 +39,14 @@ export async function operatorChangeVertical(
   userId: string,
   tenantId: string,
   vertical: unknown,
-): Promise<Success<{ previous: string; changed: boolean; privacyChanged: boolean }> | Failure<OperatorError>> {
+): Promise<Success<{ previous: string; changed: boolean; starterApplied: boolean; privacyChanged: boolean }> | Failure<OperatorError>> {
   if (typeof vertical !== "string" || !(VERTICAL_IDS as readonly string[]).includes(vertical)) return fail("invalid");
   if (!(await isOperator(db, userId))) return fail("forbidden");
   const previous = await operatorSetVertical(db, userId, tenantId, vertical);
   if (previous === null) return fail("not_found");
-  return { ok: true, previous, changed: previous !== vertical, privacyChanged: dataCollectionFor(previous) !== dataCollectionFor(vertical) };
+  // Si el giro nuevo es de restaurante y su menu esta vacio, arranca con el menu de ejemplo (si ya hay menu, no se toca).
+  const starter = previous !== vertical ? await applyStarterMenu(db, tenantId, vertical).catch(() => null) : null;
+  return { ok: true, previous, changed: previous !== vertical, starterApplied: starter?.applied === true, privacyChanged: dataCollectionFor(previous) !== dataCollectionFor(vertical) };
 }
 
 export async function operatorChangeComped(db: Database, userId: string, tenantId: string, on: boolean): Promise<Success | Failure<OperatorError>> {

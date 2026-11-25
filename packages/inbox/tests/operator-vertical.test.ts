@@ -51,7 +51,7 @@ describe("operador: cambiar el giro de un negocio", () => {
     const op = await operator();
     const target = await world();
     const r = await operatorChangeVertical(dbs.app.db, op.ownerId, target.tenantId, "belleza");
-    expect(r).toEqual({ ok: true, previous: "dental", changed: true, privacyChanged: true }); // dental es de salud: la politica de datos se afloja
+    expect(r).toEqual({ ok: true, previous: "dental", changed: true, starterApplied: false, privacyChanged: true }); // dental es de salud: la politica de datos se afloja
 
     const s = await state(target.tenantId);
     expect(s.vertical).toBe("belleza");
@@ -61,7 +61,7 @@ describe("operador: cambiar el giro de un negocio", () => {
     expect(log!.userId).toBe(op.ownerId);
 
     // Entre giros sin restriccion no cambia la politica de datos.
-    expect(await operatorChangeVertical(dbs.app.db, op.ownerId, target.tenantId, "mascotas")).toEqual({ ok: true, previous: "belleza", changed: true, privacyChanged: false });
+    expect(await operatorChangeVertical(dbs.app.db, op.ownerId, target.tenantId, "mascotas")).toEqual({ ok: true, previous: "belleza", changed: true, starterApplied: false, privacyChanged: false });
     // Y hacia uno de salud, se restringe de nuevo.
     expect(await operatorChangeVertical(dbs.app.db, op.ownerId, target.tenantId, "salud")).toMatchObject({ changed: true, privacyChanged: true });
   });
@@ -69,7 +69,7 @@ describe("operador: cambiar el giro de un negocio", () => {
   it("el mismo giro no hace nada ni deja registro", async () => {
     const op = await operator();
     const target = await world();
-    expect(await operatorChangeVertical(dbs.app.db, op.ownerId, target.tenantId, "dental")).toEqual({ ok: true, previous: "dental", changed: false, privacyChanged: false });
+    expect(await operatorChangeVertical(dbs.app.db, op.ownerId, target.tenantId, "dental")).toEqual({ ok: true, previous: "dental", changed: false, starterApplied: false, privacyChanged: false });
     expect(await logs(target.tenantId)).toHaveLength(0);
   });
 

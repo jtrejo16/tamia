@@ -1,6 +1,6 @@
 import type { MenuData, MenuGroupRow } from "@empleado/db";
 import { describe, expect, it } from "vitest";
-import { MAX_ORDER_CENTS, cartKey, describeLine, openStatus, priceCart, type HoursWindow } from "../src/orders";
+import { MAX_ORDER_CENTS, cartKey, deliveryQuote, describeLine, matchZone, openStatus, priceCart, type HoursWindow } from "../src/orders";
 
 const group = (over: Partial<MenuGroupRow> & { id: string; name: string }): MenuGroupRow => ({ required: false, multiple: false, maxChoices: null, options: [], ...over });
 const opt = (id: string, name: string, priceDeltaCents = 0, available = true) => ({ id, name, priceDeltaCents, available });
@@ -128,5 +128,41 @@ describe("horario de apertura", () => {
   it("los dias de cierre cuentan como cerrado, y el turno de madrugada de un festivo no aplica", () => {
     const h = week("13:00:00", "22:00:00");
     expect(openStatus(h, ["2027-03-01"], at("2027-03-01T19:00:00Z"), TZ)).toMatchObject({ open: false, nextOpenText: "mañana a las 13:00" });
+  });
+});
+
+describe("zonas de entrega", () => {
+  const z = (id: string, name: string, feeCents = 3000, minOrderCents = 0, active = true) => ({ id, name, feeCents, minOrderCents, active });
+  const zones = [z("1", "Centro"), z("2", "Francisco de Montejo"), z("3", "Montejo Norte"), z("4", "Cerrada", 1000, 0, false)];
+
+  it("encuentra la zona sin importar mayusculas, acentos ni adornos", () => {
+    expect(matchZone(zones, "centro")?.id).toBe("1");
+    expect(matchZone(zones, "Col. CÉNTRO, Mérida")?.id).toBe("1");
+    expect(matchZone(zones, "francisco de montejo")?.id).toBe("2");
+    expect(matchZone(zones, "Fracc. Francisco de Montejo 2")?.id).toBe("2");
+  });
+
+  it("prefiere el nombre exacto y, entre varios que caben, el mas especifico; lo ambiguo o inactivo no coincide", () => {
+    expect(matchZone(zones, "Montejo Norte")?.id).toBe("3");
+    expect(matchZone(zones, "Montejo")).toBeNull(); // cabe en dos zonas: no se adivina
+    expect(matchZone(zones, "Cerrada")).toBeNull(); // inactiva
+    expect(matchZone(zones, "Itzimna")).toBeNull();
+    expect(matchZone(zones, "  ")).toBeNull();
+    expect(matchZone(zones, "ce")).toBeNull();
+  });
+
+  it("el envio es el de la zona, gratis desde el monto, y el minimo es el mayor entre el general y el de la zona", () => {
+    const settings = { minOrderCents: 5000, freeDeliveryFromCents: 20000 };
+    expect(deliveryQuote(settings, { feeCents: 3000, minOrderCents: 0 }, 10000)).toEqual({ feeCents: 3000, minOrderCents: 5000, free: false });
+    expect(deliveryQuote(settings, { feeCents: 3000, minOrderCents: 15000 }, 10000)).toMatchObject({ minOrderCents: 15000 });
+    expect(deliveryQuote(settings, { feeCents: 3000, minOrderCents: 0 }, 20000)).toMatchObject({ feeCents: 0, free: true });
+    expect(deliveryQuote({ minOrderCents: 0, freeDeliveryFromCents: null }, { feeCents: 3000, minOrderCents: 0 }, 999_999)).toMatchObject({ feeCents: 3000, free: false });
+  });
+
+  it("la huella del pedido distingue la direccion de entrega", () => {
+    const lines = (priceCart(MENU, [{ platillo_id: "i-taco", cantidad: 1 }]) as { lines: Parameters<typeof cartKey>[0] }).lines;
+    expect(cartKey(lines, "efectivo", null, { zone: "Centro", address: "Calle 1" })).not.toBe(cartKey(lines, "efectivo", null));
+    expect(cartKey(lines, "efectivo", null, { zone: "Centro", address: "Calle 1" })).toBe(cartKey(lines, "efectivo", null, { zone: "Centro", address: "CALLE 1" }));
+    expect(cartKey(lines, "efectivo", null, { zone: "Centro", address: "Calle 1" })).not.toBe(cartKey(lines, "efectivo", null, { zone: "Centro", address: "Calle 2" }));
   });
 });

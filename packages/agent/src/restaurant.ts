@@ -5,12 +5,14 @@ import {
   businessHours,
   channels,
   conversations,
+  loadDeliveryZones,
   loadMenu,
   loadRestaurantSettings,
   orderItemModifiers,
   orderItems,
   orders,
   withTenant,
+  type DeliveryZoneRow,
   type MenuCategoryRow,
   type MenuData,
   type MenuGroupRow,
@@ -22,7 +24,7 @@ import { and, asc, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { formatLocal, formatMoney } from "./format";
 import { defineModuleTool, registerModulePrompt, registerModuleTools } from "./modules";
-import { cartKey, describeLine, openStatus, priceCart } from "./orders";
+import { cartKey, deliveryQuote, describeLine, matchZone, openStatus, priceCart } from "./orders";
 import { confirmationGate, finishMutation, proposeAction } from "./tools";
 import type { ToolResult, TurnContext } from "./types";
 
@@ -42,13 +44,24 @@ const MAX_RESULTS = 8;
 const money = (cents: number) => formatMoney(cents);
 
 /** Lo que el modelo necesita saber de las condiciones de pedido. */
-function orderInfo(s: RestaurantSettingsRow): Record<string, unknown> {
+function orderInfo(s: RestaurantSettingsRow, zones: DeliveryZoneRow[] = []): Record<string, unknown> {
+  const active = zones.filter((z) => z.active);
+  const delivery = s.deliveryEnabled && active.length > 0;
   return {
     ...(s.acceptingOrders ? {} : { pedidos_pausados: true }),
     formas_de_pago: s.paymentMethods,
     tiempo_de_preparacion_minutos: s.prepMinutes,
     ...(s.minOrderCents > 0 ? { pedido_minimo: money(s.minOrderCents) } : {}),
-    solo_para_recoger_en_el_local: true,
+    para_recoger_en_el_local: true,
+    ...(delivery
+      ? {
+          a_domicilio: {
+            tiempo_aproximado_minutos: s.deliveryMinutes,
+            zonas: active.map((z) => ({ nombre: z.name, costo_de_envio: money(z.feeCents), ...(z.minOrderCents > s.minOrderCents ? { pedido_minimo: money(z.minOrderCents) } : {}) })),
+            ...(s.freeDeliveryFromCents ? { envio_gratis_desde: money(s.freeDeliveryFromCents) } : {}),
+          },
+        }
+      : { a_domicilio: "no disponible" }),
   };
 }
 
@@ -96,11 +109,11 @@ function overview(menu: MenuData): ToolResult {
   };
 }
 
-export async function consultMenu(menu: MenuData, query: string | undefined, info?: RestaurantSettingsRow): Promise<ToolResult> {
+export async function consultMenu(menu: MenuData, query: string | undefined, info?: RestaurantSettingsRow, zones: DeliveryZoneRow[] = []): Promise<ToolResult> {
   if (menu.categories.every((c) => c.items.length === 0)) {
     return { error: "menu_vacio", instruccion: "El menú todavía no está cargado. Díselo al cliente con honestidad y usa escalar_a_humano." };
   }
-  const extra = info ? { info_de_pedidos: orderInfo(info) } : {};
+  const extra = info ? { info_de_pedidos: orderInfo(info, zones) } : {};
   const q = words(query ?? "");
   if (q.length === 0) return { ...overview(menu), ...extra };
 
@@ -148,9 +161,11 @@ const STATUS_TEXT: Record<OrderStatus, string> = {
   new: "recibido (todavía no empieza a prepararse)",
   preparing: "en preparación",
   ready: "listo para recoger",
+  on_the_way: "en camino a su domicilio",
   delivered: "entregado",
   cancelled: "cancelado",
 };
+const statusText = (o: { status: OrderStatus; mode: string }) => (o.status === "ready" && o.mode === "delivery" ? "listo; está por salir a su domicilio" : STATUS_TEXT[o.status]);
 
 const confirmado = z.boolean().default(false).describe("false para obtener el resumen; true SOLO cuando el cliente ya confirmó ese resumen en su mensaje anterior.");
 
@@ -168,11 +183,18 @@ async function channelOf(tx: Parameters<Parameters<typeof withTenant>[2]>[0], co
 }
 
 /** Argumentos en una forma estable (para que la confirmacion se ligue a ESTE pedido aunque el modelo reordene). */
-function stableArgs(args: { articulos: Array<z.infer<typeof articulo>>; forma_de_pago: string; notas?: string }) {
+function stableArgs(args: { articulos: Array<z.infer<typeof articulo>>; forma_de_pago: string; notas?: string; modo?: string; direccion?: string; colonia?: string }) {
   const articulos = args.articulos
     .map((a) => ({ platillo_id: a.platillo_id, cantidad: a.cantidad, opciones_ids: [...new Set(a.opciones_ids ?? [])].sort(), notas: a.notas?.trim() ?? "" }))
     .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
-  return { articulos, forma_de_pago: args.forma_de_pago, notas: args.notas?.trim() ?? "" };
+  return {
+    articulos,
+    forma_de_pago: args.forma_de_pago,
+    notas: args.notas?.trim() ?? "",
+    modo: args.modo ?? "recoger",
+    direccion: args.direccion?.trim() ?? "",
+    colonia: args.colonia?.trim() ?? "",
+  };
 }
 
 async function orderAudit(tx: Parameters<Parameters<typeof withTenant>[2]>[0], ctx: TurnContext, action: string, orderId: string, diff: Record<string, unknown>) {
@@ -182,11 +204,14 @@ async function orderAudit(tx: Parameters<Parameters<typeof withTenant>[2]>[0], c
 const crearPedido = defineModuleTool({
   name: "crear_pedido",
   description:
-    "Crea un pedido PARA RECOGER en el local. Primero llámala SIN confirmado para obtener el resumen con el total (calculado por el sistema) que debes repetir al cliente; solo cuando el cliente confirme, llámala de nuevo con los mismos datos y confirmado=true. Requiere el nombre y el teléfono del cliente ya guardados.",
+    "Crea un pedido, PARA RECOGER en el local (modo 'recoger') o A DOMICILIO (modo 'domicilio', solo si info_de_pedidos.a_domicilio lo ofrece; pide calle y número, colonia y referencias). Primero llámala SIN confirmado para obtener el resumen con el total (calculado por el sistema) que debes repetir al cliente; solo cuando el cliente confirme, llámala de nuevo con los mismos datos y confirmado=true. Requiere el nombre y el teléfono del cliente ya guardados.",
   mutating: true,
   schema: z.object({
     articulos: z.array(articulo).min(1).max(15),
-    forma_de_pago: z.enum(PAYMENT_METHODS).describe("Cómo va a pagar al recoger. Debe ser una de las formas_de_pago del negocio."),
+    forma_de_pago: z.enum(PAYMENT_METHODS).describe("Cómo va a pagar (al recoger o al recibir). Debe ser una de las formas_de_pago del negocio."),
+    modo: z.enum(["recoger", "domicilio"]).default("recoger").describe("recoger = pasa al local; domicilio = se lo llevan."),
+    direccion: z.string().trim().max(250).optional().describe("Solo domicilio: calle, número y referencias (entre calles, color de la casa…), con las palabras del cliente."),
+    colonia: z.string().trim().max(100).optional().describe("Solo domicilio: colonia o zona. Se compara con las zonas que cubre el restaurante."),
     notas: z.string().trim().max(300).optional().describe("Algo para TODO el pedido, por ejemplo 'recojo en 30 minutos'. No pongas aquí lo de un platillo."),
     confirmado,
   }),
@@ -196,6 +221,7 @@ const crearPedido = defineModuleTool({
       settings: await loadRestaurantSettings(tx),
       hours: await tx.select().from(businessHours).where(isNull(businessHours.staffId)),
       holidays: await tx.select().from(businessHolidays).where(isNull(businessHolidays.staffId)),
+      zones: await loadDeliveryZones(tx),
     }));
     const { menu, settings } = loaded;
 
@@ -210,7 +236,7 @@ const crearPedido = defineModuleTool({
     const name = ctx.contact.displayName?.trim();
     if (!name) return { error: "faltan_datos", faltan: ["nombre"], instruccion: "Pide el nombre del cliente (para llamarlo al recoger) y guárdalo con guardar_datos_contacto antes de crear el pedido." };
     if (!ctx.contact.phoneE164) {
-      return { error: "faltan_datos", faltan: ["teléfono de WhatsApp a 10 dígitos"], instruccion: "Antes de crear el pedido pídele su número de WhatsApp a 10 dígitos y dile que es para avisarle cuando esté listo. Guárdalo con guardar_datos_contacto (campo telefono)." };
+      return { error: "faltan_datos", faltan: ["teléfono a 10 dígitos"], instruccion: "Antes de crear el pedido pídele su número de teléfono a 10 dígitos (si es por llamada, número por número, y repítelo para confirmar) y dile que es para avisarle de su pedido. Guárdalo con guardar_datos_contacto (campo telefono)." };
     }
     if (!settings.paymentMethods.includes(args.forma_de_pago)) {
       return { error: "forma_de_pago_no_disponible", formas_de_pago: settings.paymentMethods, instruccion: `Solo aceptan: ${settings.paymentMethods.join(", ")}. Pregúntale con cuál prefiere pagar.` };
@@ -222,19 +248,49 @@ const crearPedido = defineModuleTool({
       return { error: "pedido_minimo", minimo: money(settings.minOrderCents), llevas: money(cart.subtotalCents), instruccion: `El pedido mínimo es de ${money(settings.minOrderCents)} y lleva ${money(cart.subtotalCents)}. Ofrécele agregar algo más.` };
     }
 
+    // A domicilio: la zona sale de la colonia que dio el cliente y el envio lo pone el sistema segun esa zona.
+    const delivery = args.modo === "domicilio";
+    const address = args.direccion?.trim() ?? "";
+    const colonia = args.colonia?.trim() ?? "";
+    let zone: DeliveryZoneRow | null = null;
+    let feeCents = 0;
+    if (delivery) {
+      const zones = loaded.zones.filter((z) => z.active);
+      if (!settings.deliveryEnabled || zones.length === 0) {
+        return { error: "entrega_no_disponible", instruccion: "Este restaurante no hace entregas a domicilio. Ofrécele que pase a recoger su pedido al local." };
+      }
+      const missing = [...(address.length < 5 ? ["calle y número (y referencias)"] : []), ...(colonia.length < 3 ? ["colonia"] : [])];
+      if (missing.length > 0) return { error: "faltan_datos", faltan: missing, instruccion: `Para el domicilio falta: ${missing.join(" y ")}. Pídelo al cliente.` };
+      zone = matchZone(zones, colonia);
+      if (!zone) {
+        return { error: "zona_no_cubierta", zonas: zones.map((z) => z.name), instruccion: `Esa colonia no está en las zonas de entrega. Dile cuáles cubren (${zones.map((z) => z.name).join(", ")}) y ofrécele pasar a recoger.` };
+      }
+      const quote = deliveryQuote(settings, zone, cart.subtotalCents);
+      if (cart.subtotalCents < quote.minOrderCents) {
+        return { error: "pedido_minimo", minimo: money(quote.minOrderCents), llevas: money(cart.subtotalCents), instruccion: `Para entregar en ${zone.name} el pedido mínimo es de ${money(quote.minOrderCents)} (sin envío) y lleva ${money(cart.subtotalCents)}. Ofrécele agregar algo más.` };
+      }
+      feeCents = quote.feeCents;
+    }
+    const totalCents = cart.subtotalCents + feeCents;
+
     const notes = args.notas?.trim() || null;
-    const summary =
-      `Pedido para recoger en el local: ${cart.lines.map(describeLine).join("; ")}. Total ${money(cart.subtotalCents)}. ` +
-      `Pago: ${args.forma_de_pago}${args.forma_de_pago === "efectivo" ? " al recoger" : ""}. A nombre de ${name}.` +
-      (notes ? ` Nota: ${notes}.` : "") +
-      ` Estará listo en unos ${settings.prepMinutes} minutos.`;
+    const minutes = delivery ? settings.deliveryMinutes : settings.prepMinutes;
+    const summary = delivery
+      ? `Pedido a domicilio: ${cart.lines.map(describeLine).join("; ")}. Subtotal ${money(cart.subtotalCents)}, envío a ${zone!.name} ${feeCents > 0 ? money(feeCents) : "gratis"}. Total ${money(totalCents)}. ` +
+        `Pago: ${args.forma_de_pago}${args.forma_de_pago === "efectivo" ? " al recibir" : ""}. A nombre de ${name}. Se entrega en: ${address}, col. ${zone!.name}.` +
+        (notes ? ` Nota: ${notes}.` : "") +
+        ` Llegará en unos ${minutes} minutos.`
+      : `Pedido para recoger en el local: ${cart.lines.map(describeLine).join("; ")}. Total ${money(cart.subtotalCents)}. ` +
+        `Pago: ${args.forma_de_pago}${args.forma_de_pago === "efectivo" ? " al recoger" : ""}. A nombre de ${name}.` +
+        (notes ? ` Nota: ${notes}.` : "") +
+        ` Estará listo en unos ${minutes} minutos.`;
 
     const stable = stableArgs(args);
     const gate = confirmationGate(ctx, "crear_pedido", stable, args.confirmado, summary);
     if (gate) return gate;
     if (ctx.mode === "dry") return proposeAction(ctx, { tool: "crear_pedido", args: stable, summary });
 
-    const key = cartKey(cart.lines, args.forma_de_pago, notes);
+    const key = cartKey(cart.lines, args.forma_de_pago, notes, delivery ? { zone: zone!.name, address } : null);
     const created = await withTenant(ctx.db, { tenantId: ctx.tenantId }, async (tx) => {
       // Si ya se creo este mismo pedido hace unos minutos (confirmacion repetida), se devuelve ese en vez de duplicarlo.
       const [dup] = await tx
@@ -254,15 +310,18 @@ const crearPedido = defineModuleTool({
           contactId: ctx.contactId,
           conversationId: ctx.conversationId,
           channel,
-          mode: "pickup",
+          mode: delivery ? "delivery" : "pickup",
           status: "new",
           customerName: name,
           customerPhone: ctx.contact.phoneE164,
           notes,
           paymentMethod: args.forma_de_pago,
           subtotalCents: cart.subtotalCents,
-          totalCents: cart.subtotalCents,
-          estimatedReadyAt: new Date(ctx.now.getTime() + settings.prepMinutes * 60_000),
+          deliveryFeeCents: feeCents,
+          deliveryAddress: delivery ? address : null,
+          deliveryZoneName: zone?.name ?? null,
+          totalCents,
+          estimatedReadyAt: new Date(ctx.now.getTime() + minutes * 60_000),
           idempotencyKey: key,
           createdAt: ctx.now,
           updatedAt: ctx.now,
@@ -277,7 +336,7 @@ const crearPedido = defineModuleTool({
           await tx.insert(orderItemModifiers).values(l.modifiers.map((m) => ({ tenantId: ctx.tenantId, orderItemId: row!.id, groupName: m.groupName, optionName: m.optionName, priceDeltaCents: m.priceDeltaCents })));
         }
       }
-      await orderAudit(tx, ctx, "order.created", order!.id, { number: order!.number, totalCents: cart.subtotalCents, channel });
+      await orderAudit(tx, ctx, "order.created", order!.id, { number: order!.number, totalCents, channel, mode: delivery ? "delivery" : "pickup" });
       return { order: order!, duplicate: false };
     });
     finishMutation(ctx);
@@ -285,11 +344,13 @@ const crearPedido = defineModuleTool({
       ok: true,
       pedido_numero: created.order.number,
       total: money(created.order.totalCents),
-      listo_en_minutos: settings.prepMinutes,
+      ...(delivery ? { modo: "domicilio", costo_de_envio: money(feeCents), llega_en_minutos: minutes } : { modo: "recoger", listo_en_minutos: minutes }),
       confirmacion: summary,
       ...(created.duplicate ? { nota: "Este pedido ya estaba registrado; no se duplicó." } : {}),
       ...(args.forma_de_pago === "transferencia" && settings.transferInfo ? { datos_para_transferir: settings.transferInfo } : {}),
-      instruccion: "Dile su NÚMERO DE PEDIDO, el total y en cuánto tiempo estará listo para recoger en el local. Si paga por transferencia, dale los datos para transferir.",
+      instruccion: delivery
+        ? "Dile su NÚMERO DE PEDIDO, el total con el envío, la dirección a la que se lleva y en cuánto tiempo llegará. Si paga por transferencia, dale los datos para transferir."
+        : "Dile su NÚMERO DE PEDIDO, el total y en cuánto tiempo estará listo para recoger en el local. Si paga por transferencia, dale los datos para transferir.",
     };
   },
 });
@@ -314,13 +375,15 @@ const estadoPedido = defineModuleTool({
     return {
       pedidos: rows.map(({ o, items }) => ({
         pedido_numero: o.number,
-        estado: STATUS_TEXT[o.status],
+        estado: statusText(o),
         total: money(o.totalCents),
+        modo: o.mode === "delivery" ? "a domicilio" : "para recoger",
+        ...(o.mode === "delivery" && o.deliveryAddress ? { direccion: `${o.deliveryAddress}${o.deliveryZoneName ? `, col. ${o.deliveryZoneName}` : ""}` } : {}),
         articulos: items.map((i) => `${i.quantity} × ${i.name}`),
-        ...((o.status === "new" || o.status === "preparing") && o.estimatedReadyAt ? { listo_aproximadamente: formatLocal(o.estimatedReadyAt, ctx.tenant.timezone) } : {}),
+        ...((o.status === "new" || o.status === "preparing" || (o.status === "ready" && o.mode === "delivery")) && o.estimatedReadyAt ? { llegada_aproximada: formatLocal(o.estimatedReadyAt, ctx.tenant.timezone) } : {}),
         ...(o.status === "cancelled" && o.cancelReason ? { motivo_de_cancelacion: o.cancelReason } : {}),
       })),
-      instruccion: "Responde con el estado real. Si ya está listo, dile que puede pasar a recogerlo.",
+      instruccion: "Responde con el estado real. Si es para recoger y ya está listo, dile que puede pasar; si es a domicilio, que va en camino o está por salir.",
     };
   },
 });
@@ -337,9 +400,9 @@ const cancelarPedido = defineModuleTool({
       return row ?? null;
     });
     if (!order) return { error: "pedido_no_encontrado", instruccion: "No hay un pedido con ese número a nombre de este cliente. Revisa con estado_pedido." };
-    if (order.status === "cancelled" || order.status === "delivered") return { error: "pedido_cerrado", estado: STATUS_TEXT[order.status], instruccion: `El pedido #${order.number} ya está ${STATUS_TEXT[order.status]}: no se puede cancelar.` };
+    if (order.status === "cancelled" || order.status === "delivered") return { error: "pedido_cerrado", estado: statusText(order), instruccion: `El pedido #${order.number} ya está ${statusText(order)}: no se puede cancelar.` };
     if (order.status !== "new") {
-      return { error: "ya_en_preparacion", estado: STATUS_TEXT[order.status], instruccion: `El pedido #${order.number} ya está ${STATUS_TEXT[order.status]}: no se puede cancelar por aquí. Díselo con amabilidad y usa escalar_a_humano para que una persona lo vea.` };
+      return { error: "ya_en_preparacion", estado: statusText(order), instruccion: `El pedido #${order.number} ya está ${statusText(order)}: no se puede cancelar por aquí. Díselo con amabilidad y usa escalar_a_humano para que una persona lo vea.` };
     }
 
     const summary = `Cancelar el pedido #${order.number} (${money(order.totalCents)}).`;
@@ -376,8 +439,8 @@ registerModuleTools("restaurante", [
       busqueda: z.string().trim().max(120).optional().describe("Platillo, ingrediente o categoría, por ejemplo 'pastor', 'hawaiana', 'bebidas'. Vacío = resumen del menú."),
     }),
     async execute(args, ctx) {
-      const { menu, settings } = await withTenant(ctx.db, { tenantId: ctx.tenantId }, async (tx) => ({ menu: await loadMenu(tx), settings: await loadRestaurantSettings(tx) }));
-      return consultMenu(menu, args.busqueda, settings);
+      const { menu, settings, zones } = await withTenant(ctx.db, { tenantId: ctx.tenantId }, async (tx) => ({ menu: await loadMenu(tx), settings: await loadRestaurantSettings(tx), zones: await loadDeliveryZones(tx) }));
+      return consultMenu(menu, args.busqueda, settings, zones);
     },
   }),
   crearPedido,
@@ -388,7 +451,7 @@ registerModuleTools("restaurante", [
 registerModulePrompt("restaurante", {
   tasks: [
     "- Responder dudas del menú (platillos, precios, ingredientes y modificadores) usando consultar_menu.",
-    "- Tomar pedidos para recoger en el local, consultar su estado y cancelarlos mientras no se preparen.",
+    "- Tomar pedidos para recoger en el local o a domicilio (si el restaurante lo ofrece), consultar su estado y cancelarlos mientras no se preparen.",
   ],
   truthRules: [
     "Platillos, precios, ingredientes y modificadores salen SOLO de consultar_menu. Si un platillo no aparece, no existe: no lo ofrezcas ni inventes alternativas. Si está agotado, dilo y ofrece otra cosa del menú.",
@@ -400,12 +463,13 @@ registerModulePrompt("restaurante", {
 2. Si piden "el menú" o una categoría, resume las categorías y ofrece dar el detalle; no pegues listas enormes.
 3. Di los precios en pesos y menciona los modificadores obligatorios (por ejemplo el tamaño) con su costo extra.
 
-TOMAR UN PEDIDO (solo para recoger en el local; a domicilio todavía no: si lo piden, díselo y usa escalar_a_humano):
+TOMAR UN PEDIDO (para recoger en el local o, solo si info_de_pedidos.a_domicilio lo ofrece, a domicilio; si lo piden a domicilio y no hay, díselo y ofrece recoger):
 1. Busca cada platillo con consultar_menu para obtener su platillo_id y los opcion_id. Si falta un modificador obligatorio (por ejemplo el tamaño), pregúntalo.
 2. Anota con las palabras del cliente lo especial de cada platillo ("sin cebolla") en las notas de ESE platillo.
-3. Pide lo que falte: el nombre (guárdalo con guardar_datos_contacto) y cómo va a pagar, entre las formas_de_pago del negocio.
+3. Pide lo que falte: el nombre (guárdalo con guardar_datos_contacto), si recoge o es a domicilio, y cómo va a pagar, entre las formas_de_pago del negocio.
+   A DOMICILIO: pide calle y número con referencias, y la colonia. Las zonas y el costo de envío salen de info_de_pedidos.a_domicilio: si su colonia no está, díselo con las zonas que sí cubren y ofrece recoger. El envío lo calcula el sistema; no lo inventes ni lo sumes tú.
 4. ANTES de crear: llama crear_pedido SIN confirmado para obtener el resumen con el total, repítelo completo al cliente y pide confirmación explícita. Solo cuando responda que sí, vuelve a llamarla con los mismos datos y confirmado=true.
-5. Confirma usando el resultado real: dile su número de pedido, el total y en cuánto tiempo estará listo para recoger. Si paga por transferencia, dale los datos.
+5. Confirma usando el resultado real: dile su número de pedido, el total (con envío si es a domicilio) y en cuánto tiempo estará listo o llegará. Si paga por transferencia, dale los datos.
 6. Si pregunta "¿ya está mi pedido?", usa estado_pedido. Para cancelar, cancelar_pedido (solo si aún no se prepara; si ya empezó, díselo y pásalo con una persona).
 7. Si el sistema dice que están cerrados o que no toman pedidos por ahora, díselo con amabilidad y no insistas.`,
   escalation: "ALERGIAS Y DIETAS: una alergia o intolerancia siempre se escala a una persona antes de recomendar un platillo.",

@@ -33,6 +33,9 @@ const TABS: Array<{ id: Tab; label: string; ownerOnly?: boolean }> = [
   { id: "usuarios", label: "Usuarios", ownerOnly: true },
 ];
 
+/** Pestañas del modulo de citas: un negocio sin ese modulo (por ejemplo un restaurante) no las ve. */
+const CITAS_TABS = new Set<Tab>(["servicios", "equipo"]);
+
 const field =
   "w-full rounded-lg bg-white px-3 py-2 text-sm text-slate-900 ring-1 ring-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:bg-slate-50 disabled:text-slate-500";
 
@@ -138,7 +141,7 @@ export function ConfigView() {
   // Al volver de Facebook se abre directo la pestaña de redes (?tab=redes); en efecto para no desajustar la hidratación.
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    if (t === "redes" || t === "calendario") setTab(t);
+    if (t && TABS.some((x) => x.id === t)) setTab(t as Tab); // enlaces directos (por ejemplo desde «Primeros pasos»)
   }, []);
 
   const editable = panel.role === "owner";
@@ -153,7 +156,7 @@ export function ConfigView() {
         {!editable && <Alert tone="amber">Solo el dueño puede cambiar la configuración. Tú puedes consultarla.</Alert>}
 
         <div className="flex gap-1.5 overflow-x-auto pb-1">
-          {TABS.filter((t) => !t.ownerOnly || editable).map((t) => (
+          {TABS.filter((t) => (!t.ownerOnly || editable) && (!CITAS_TABS.has(t.id) || panel.modules.includes("citas"))).map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}

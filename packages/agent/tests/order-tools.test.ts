@@ -3,6 +3,7 @@ import {
   businessHolidays,
   businessHours,
   contacts,
+  deliveryZones,
   loadMenu,
   menuCategories,
   menuItemGroups,
@@ -145,6 +146,86 @@ describe("crear_pedido", () => {
     const s = await seed();
     await dbs.owner.db.update(tenants).set({ profile: { cancellationNoticeHours: 12 } }).where(eq(tenants.id, s.w.tenantId));
     expect(await call("crear_pedido", base(s), await ctxOf(s))).toMatchObject({ error: "herramienta_desconocida" });
+  });
+});
+
+async function enableDelivery(s: Seed, over: Partial<typeof restaurantSettings.$inferInsert> = {}) {
+  await dbs.owner.db.insert(restaurantSettings).values({ tenantId: s.w.tenantId, deliveryEnabled: true, deliveryMinutes: 45, ...over }).onConflictDoUpdate({ target: restaurantSettings.tenantId, set: { deliveryEnabled: true, deliveryMinutes: 45, ...over } });
+  await dbs.owner.db.insert(deliveryZones).values([
+    { tenantId: s.w.tenantId, name: "Centro", feeCents: 3000 },
+    { tenantId: s.w.tenantId, name: "Norte", feeCents: 5000, minOrderCents: 20000, sortOrder: 1 },
+    { tenantId: s.w.tenantId, name: "Cerrada", feeCents: 1000, active: false, sortOrder: 2 },
+  ]);
+}
+const home = (s: Seed, over: Record<string, unknown> = {}) => ({ ...base(s), modo: "domicilio", direccion: "Calle 60 #123 entre 21 y 23, casa azul", colonia: "Centro", ...over });
+
+describe("crear_pedido a domicilio", () => {
+  it("un negocio sin domicilio no lo ofrece: ni en info_de_pedidos ni al crear", async () => {
+    const s = await seed();
+    const info = (await call("consultar_menu", {}, await ctxOf(s))) as Record<string, any>;
+    expect(info.info_de_pedidos.a_domicilio).toBe("no disponible");
+    expect(await call("crear_pedido", home(s), await ctxOf(s))).toMatchObject({ error: "entrega_no_disponible" });
+    expect(await ordersOf(s)).toHaveLength(0);
+  });
+
+  it("consultar_menu publica las zonas activas con su costo (no las inactivas) y el envio gratis", async () => {
+    const s = await seed();
+    await enableDelivery(s, { freeDeliveryFromCents: 30000 });
+    const a = ((await call("consultar_menu", {}, await ctxOf(s))) as Record<string, any>).info_de_pedidos.a_domicilio;
+    expect(a).toMatchObject({ tiempo_aproximado_minutos: 45, envio_gratis_desde: "$300 MXN" });
+    expect(a.zonas).toEqual([{ nombre: "Centro", costo_de_envio: "$30 MXN" }, { nombre: "Norte", costo_de_envio: "$50 MXN", pedido_minimo: "$200 MXN" }]);
+  });
+
+  it("calcula el envio por la zona de la colonia: resumen con envio y total, y el pedido guarda direccion, zona y envio", async () => {
+    const s = await seed();
+    await enableDelivery(s);
+    const { summary, result } = await placeOrder(s, home(s, { colonia: "col. CENTRO, Mérida" }));
+    expect(summary.resumen).toContain("envío a Centro $30 MXN");
+    expect(summary.resumen).toContain("Total $87 MXN"); // 57 + 30
+    expect(summary.resumen).toContain("Calle 60 #123");
+    expect(result).toMatchObject({ ok: true, modo: "domicilio", total: "$87 MXN", costo_de_envio: "$30 MXN", llega_en_minutos: 45 });
+    const [o] = await ordersOf(s);
+    expect(o).toMatchObject({ mode: "delivery", subtotalCents: 5700, deliveryFeeCents: 3000, totalCents: 8700, deliveryZoneName: "Centro", deliveryAddress: expect.stringContaining("casa azul") });
+  });
+
+  it("el envio es gratis desde el monto configurado", async () => {
+    const s = await seed();
+    await enableDelivery(s, { freeDeliveryFromCents: 5000 });
+    const { result } = await placeOrder(s, home(s));
+    expect(result).toMatchObject({ ok: true, total: "$57 MXN", costo_de_envio: "$0 MXN" });
+    expect((await ordersOf(s))[0]).toMatchObject({ deliveryFeeCents: 0, totalCents: 5700 });
+  });
+
+  it("rechaza colonia fuera de zona (y la inactiva), datos faltantes y el minimo de la zona", async () => {
+    const s = await seed();
+    await enableDelivery(s);
+    const ctx = await ctxOf(s);
+    expect(await call("crear_pedido", home(s, { colonia: "Francisco de Montejo" }), ctx)).toMatchObject({ error: "zona_no_cubierta", zonas: ["Centro", "Norte"] });
+    expect(await call("crear_pedido", home(s, { colonia: "Cerrada" }), ctx)).toMatchObject({ error: "zona_no_cubierta" });
+    expect(await call("crear_pedido", home(s, { direccion: undefined }), ctx)).toMatchObject({ error: "faltan_datos", faltan: ["calle y número (y referencias)"] });
+    expect(await call("crear_pedido", home(s, { colonia: undefined }), ctx)).toMatchObject({ error: "faltan_datos", faltan: ["colonia"] });
+    expect(await call("crear_pedido", home(s, { colonia: "Norte" }), ctx)).toMatchObject({ error: "pedido_minimo", minimo: "$200 MXN" });
+    expect(await ordersOf(s)).toHaveLength(0);
+  });
+
+  it("recoger sigue igual aunque haya domicilio, y el mismo carrito a otra direccion es otro pedido", async () => {
+    const s = await seed();
+    await enableDelivery(s);
+    const pick = await placeOrder(s, base(s));
+    expect(pick.result).toMatchObject({ ok: true, modo: "recoger", total: "$57 MXN" });
+    const a = await placeOrder(s, home(s));
+    const b = await placeOrder(s, home(s, { direccion: "Calle 10 #5, portón negro" }));
+    expect((a.result as any).pedido_numero).toBe(2);
+    expect((b.result as any).pedido_numero).toBe(3);
+  });
+
+  it("estado_pedido dice que es a domicilio, a donde va y el estado en camino", async () => {
+    const s = await seed();
+    await enableDelivery(s);
+    await placeOrder(s, home(s));
+    await dbs.owner.db.update(orders).set({ status: "on_the_way" }).where(eq(orders.tenantId, s.w.tenantId));
+    const r = await call("estado_pedido", {}, await ctxOf(s));
+    expect(r.pedidos[0]).toMatchObject({ modo: "a domicilio", direccion: expect.stringContaining("col. Centro"), estado: expect.stringContaining("en camino") });
   });
 });
 

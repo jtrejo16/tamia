@@ -1,12 +1,14 @@
 # Restaurante (módulo `restaurante`)
 
-Estado: **fase 2, pedidos para recoger.** El asistente contesta con el menú real y **toma pedidos para recoger en el local** por WhatsApp, Messenger e Instagram; el equipo los atiende en el tablero de **Pedidos**. Todavía **no** hay domicilio ni reservaciones: si el cliente pide a domicilio, el asistente lo dice y escala a una persona.
+Estado: **fase 5, giros de restaurante y primeros pasos.** El asistente contesta con el menú real y **toma pedidos para recoger en el local o a domicilio** (si el restaurante lo activa) por WhatsApp, Messenger e Instagram; el equipo los atiende en el tablero de **Pedidos**. Por **teléfono** el asistente informa el menú y, si se activa, también toma pedidos. Un restaurante se da de alta eligiendo su giro y arranca con un menú de ejemplo. Todavía **no** hay reservaciones.
 
-Las fases siguientes (domicilio, voz, plantillas «Taquería» y «Pizzería», reservaciones) están en el plan de la conversación de diseño; este archivo se va llenando conforme se construyan.
+Las fases siguientes (reservaciones por aforo, landing «Para restaurantes» y guion de demo) están en el plan de la conversación de diseño; este archivo se va llenando conforme se construyan.
 
 ## Cómo se enciende para un negocio
 
-El módulo se activa por negocio. Todavía no hay un giro «restaurante» en el registro (llega con las plantillas, fase 5), así que por ahora se enciende con una lista de módulos en el perfil del negocio:
+Hay tres giros de restaurante: **Taquería**, **Pizzería** y **Restaurante, fonda o cafetería**. Quien se registra en `/registro` elige uno (o el operador se lo asigna con *Cambiar giro*) y el negocio arranca **solo con el módulo de restaurante** (sin Citas): menú, pedidos y el prompt del asistente se componen según el módulo (ver `docs/MODULOS.md`). El pack de cada giro (`packs/taqueria.json`, `pizzeria.json`, `restaurante.json`) da el tono y las reglas de escalamiento (quejas, reembolsos, alergias, pedidos muy grandes).
+
+Para encenderlo a un negocio que ya existe sin cambiarle el giro, o para tener los dos módulos, se sigue pudiendo con una lista de módulos en el perfil:
 
 ```sql
 UPDATE tenants
@@ -15,7 +17,7 @@ SET profile = jsonb_set(coalesce(profile, '{}'::jsonb), '{modules}', '["restaura
 WHERE id = '<id del negocio>';
 ```
 
-Ojo: esa lista **reemplaza** a la del giro. Con `["restaurante"]` el negocio deja de tener el módulo de citas (se le oculta «Citas» y el agente pierde las herramientas de agenda). Para tener los dos: `["citas","restaurante"]`. Para apagarlo: quitar la clave `modules` del perfil.
+Ojo: esa lista **reemplaza** a la del giro. Con `["restaurante"]` el negocio deja de tener el módulo de citas (se le oculta «Citas» y el agente pierde las herramientas de agenda). Para tener los dos: `["citas","restaurante"]`. Para volver al módulo del giro: quitar la clave `modules` del perfil.
 
 Sin el módulo, la pantalla Menú, la API (`/api/menu/*`) y la herramienta del agente no existen para el negocio.
 
@@ -49,6 +51,45 @@ Reglas que el código impone (no el prompt): pedidos pausados, **horario del neg
 
 **Aviso al equipo.** Cada minuto el worker manda un **correo** por cada pedido nuevo a los destinatarios de correo de *Ajustes → Avisos al equipo* (con cliente, partidas, total y enlace al tablero). Se reclama antes de enviar (sin duplicados con varios workers) y reintenta hasta 5 veces. Si el negocio no tiene destinatario de correo, el tablero igual muestra el pedido.
 
+## Pedidos a domicilio (fase 3)
+
+Se activa en **Pedidos → Ajustes → Entrega a domicilio** (recepción o dueño) y necesita al menos **una zona activa**. Sin eso el asistente no lo ofrece y `crear_pedido` en modo domicilio responde `entrega_no_disponible`.
+
+- **Zonas de entrega:** una por colonia o sector, con su **costo de envío** y un pedido mínimo propio opcional (vale el mayor entre el general y el de la zona). El tiempo de entrega y el **envío gratis desde** un monto son generales. Quitar una zona no altera los pedidos ya hechos (guardan el nombre de su zona, la dirección y el envío).
+- **Agente:** `crear_pedido` recibe `modo` (`recoger` por defecto o `domicilio`), `direccion` (calle, número y referencias) y `colonia`. **La zona y el envío los decide el código**: la colonia se compara con las zonas activas sin importar mayúsculas ni acentos ("col. CENTRO, Mérida" → Centro); si cabe en dos zonas o en ninguna, no se adivina: responde `zona_no_cubierta` con las zonas que sí cubre y el asistente ofrece recoger. El resumen que confirma el cliente trae subtotal, envío, total, dirección y tiempo. `consultar_menu` publica las zonas con su costo en `info_de_pedidos.a_domicilio`.
+- **Estados:** nuevo → preparando → listo → **en camino** → entregado (en camino es opcional; se puede pasar de listo a entregado). «En camino» no existe en los pedidos para recoger. Al marcar **en camino** se le escribe al cliente («va en camino», con el total a pagar); a un pedido a domicilio no se le manda «listo para recoger». Cancelar sigue avisando con el motivo.
+- **Tablero:** las tarjetas muestran «A domicilio» o «Para recoger», la dirección y el envío; aparece la columna **En camino** solo cuando hay pedidos a domicilio.
+- **Correo al equipo:** dice «A DOMICILIO», con dirección, zona, envío y total.
+- `estado_pedido` dice si es a domicilio, a dónde va y si ya va en camino. El cliente solo cancela mientras el pedido siga nuevo, igual que antes.
+
+No incluye: cálculo de distancia o mapas (las zonas son por nombre de colonia), repartidores ni seguimiento en vivo, ni la ubicación de WhatsApp como dirección (el asistente pide la dirección escrita).
+
+## Voz: menú y pedidos por llamada (fase 4)
+
+El asistente telefónico (ver `docs/VOICE.md`) usa **las mismas herramientas y reglas** que el de texto; no hay lógica de pedidos aparte para voz.
+
+- **Siempre** (con el módulo): `consultar_menu` por teléfono. El prompt de voz pide hablar corto (categorías o máximo tres platillos, precios en pesos hablados) y no leer listas largas.
+- **Tomar pedidos por teléfono es un ajuste aparte** (*Ajustes → Llamadas → «Permitir que tome pedidos por teléfono»*, solo dueño; apagado por defecto). Apagado: el asistente informa el menú y precios, toma nombre, pedido, si es para recoger o a domicilio (con dirección y colonia) y **escala a una persona** con esos datos. Encendido: gana `crear_pedido`, `estado_pedido` y `cancelar_pedido`. **Hay que volver a sincronizar con Retell** después de cambiarlo.
+- **La confirmación sigue impuesta por código:** `crear_pedido` primero devuelve el resumen con el total; el pedido solo se crea si el cliente **habló de nuevo** después (se cuenta con la transcripción; sin ella, deben pasar unos segundos). Mismas validaciones que en WhatsApp: horario, pedidos pausados, mínimo, zona y envío calculados por el sistema.
+- **Dirección de entrega por voz:** el prompt manda repetirla completa para confirmarla; la zona sale de la colonia como siempre (si no encaja, ofrece recoger).
+- **Teléfono:** se toma el número desde el que llama (si es visible). Con número oculto el asistente lo pide número por número y lo repite antes de crear el pedido.
+- El pedido queda con canal **Llamada** en el tablero y llega el mismo correo al equipo.
+- **Avisos al cliente:** una llamada no se contesta por texto, así que «listo» / «en camino» / «cancelado» se mandan por **otro canal del mismo cliente** (WhatsApp, etc.) si su ventana de 24 h sigue abierta. Si no hay, el cambio se guarda y el panel avisa que hay que llamarle.
+- Un negocio solo de restaurante no recibe en su prompt de voz nada de citas ni de urgencias dentales; con los dos módulos lleva ambos bloques. Un negocio de citas queda igual que antes.
+
+**Sin probar con Retell real:** como el resto de la voz, se verificó con un Retell simulado. Conviene una llamada web de prueba antes de enseñarlo (ver el guion de demo, fase 7).
+
+## Menú de ejemplo y primeros pasos (fase 5)
+
+**Menú de ejemplo.** Al registrarse con uno de los tres giros, el negocio nace con un menú de ejemplo realista (con modificadores): tacos con tortilla y extras y bebidas con tamaño en la taquería; pizzas con tamaño obligatorio, orilla y extras en la pizzería; entradas, platos fuertes, bebidas y postres en el restaurante. Los datos viven en `packages/shared/src/starter-menus.ts` y se cargan con `applyStarterMenu` (`packages/inbox/src/starter.ts`). Reglas:
+
+- **Solo se carga una vez y nunca pisa un menú que ya existe.** Si el registro no puede cargarlo, el alta sigue (el menú se puede cargar a mano o por CSV).
+- Cuando el **operador cambia el giro** de un negocio con el menú vacío a uno de restaurante, también se carga (la consola avisa «Se cargó un menú de ejemplo»). Para demos: crear un negocio de prueba, cambiarle el giro y ya tiene menú.
+- Los precios son **de referencia**: el negocio queda marcado como «menú sin revisar» (`profile.starterMenu`) hasta que el dueño cambia algo del menú (editar, agregar, borrar o importar; una importación de prueba no cuenta). Mientras tanto, *Primeros pasos* muestra un aviso.
+- El horario del negocio y los ajustes de pedidos **no** se precargan: son del dueño (y sin horario cargado el asistente no bloquea pedidos).
+
+**Primeros pasos** (`/inicio`, `packages/inbox/src/onboarding.ts`): lista con **porcentaje de avance** calculada con lo que ya hay (no guarda nada). Pasos del núcleo: describir el negocio (descripción y dirección), horario, conectar WhatsApp y avisos al equipo. Con el módulo de citas se suman servicios y equipo; con el de restaurante, cargar el menú, **revisar el menú de ejemplo** (si arrancó con uno), revisar los ajustes de pedidos (se marca al guardarlos una vez) y, **opcional y sin contar en el porcentaje**, la entrega a domicilio. Cada paso lleva directo a su pantalla (`/configuracion?tab=…`). La entrada «Primeros pasos» aparece **primera en el menú con su porcentaje** mientras falte algo y desaparece al llegar a 100 %. Los negocios de restaurante tampoco ven las pestañas de Servicios y Equipo en Ajustes.
+
 ## Formato del CSV
 
 Encabezado obligatorio: `categoria`, `nombre`, `precio`. Opcionales: `descripcion`, `disponible`, `modificadores`.
@@ -70,16 +111,14 @@ Bebidas,Refresco,,25,no,
 
 ## Datos y seguridad
 
-Tablas del menú (migración `0026`), todas con aislamiento por negocio (RLS): `menu_categories`, `menu_items`, `menu_modifier_groups`, `menu_modifier_options` y `menu_item_groups`. Los precios van en centavos de peso mexicano; no hay otra moneda por ahora. Los nombres son únicos sin distinguir mayúsculas (categoría por negocio, platillo por categoría, grupo por negocio, opción por grupo).
+Tablas del menú (migración `0026`; el menú de ejemplo se guarda en las mismas, sin tablas nuevas), todas con aislamiento por negocio (RLS): `menu_categories`, `menu_items`, `menu_modifier_groups`, `menu_modifier_options` y `menu_item_groups`. Los precios van en centavos de peso mexicano; no hay otra moneda por ahora. Los nombres son únicos sin distinguir mayúsculas (categoría por negocio, platillo por categoría, grupo por negocio, opción por grupo).
 
-Tablas de pedidos (migración `0027`, también con RLS): `restaurant_settings`, `orders`, `order_items` y `order_item_modifiers`, más la función `orders_to_notify` (SECURITY DEFINER, solo devuelve ids). El pedido guarda el nombre y el precio de cada platillo **al momento de pedir**, así que cambiar o borrar un platillo del menú no altera pedidos ya hechos. Unir dos contactos duplicados también mueve sus pedidos.
+Tablas de pedidos (migración `0027`, también con RLS; la `0028` suma `delivery_zones`, el estado «en camino» y los campos de domicilio en `orders` y `restaurant_settings`): `restaurant_settings`, `orders`, `order_items` y `order_item_modifiers`, más la función `orders_to_notify` (SECURITY DEFINER, solo devuelve ids). El pedido guarda el nombre y el precio de cada platillo **al momento de pedir**, así que cambiar o borrar un platillo del menú no altera pedidos ya hechos. Unir dos contactos duplicados también mueve sus pedidos.
 
 El código del menú vive en: `packages/db/src/schema/restaurant.ts` y `menu.ts` (lectura), `packages/inbox/src/menu.ts` y `csv.ts` (edición, importar y exportar), `packages/agent/src/restaurant.ts` (herramienta y prompt), `apps/web/src/components/menu-view.tsx` y `app/api/menu/` (panel). Pedidos: `packages/agent/src/orders.ts` y `restaurant.ts`, `packages/inbox/src/orders.ts`, `apps/worker/src/processors/orders.ts`, `apps/web/src/components/orders-view.tsx` y `app/api/orders/`.
 
 ## Pendiente
 
-- Pedidos a domicilio (dirección, zonas, costo de envío): fase 3.
-- Pedidos por llamada (voz): fase 4.
 - Cobro en línea y ticket de cocina impreso: fuera de alcance por ahora.
 - Orden manual de categorías y platillos (hoy van en el orden en que se crearon).
 - Fotos de platillos.

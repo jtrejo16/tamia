@@ -1,0 +1,1 @@
+ALTER TABLE "voice_settings" ADD COLUMN "allow_orders" boolean DEFAULT false NOT NULL;

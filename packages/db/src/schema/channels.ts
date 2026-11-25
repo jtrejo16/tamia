@@ -230,6 +230,8 @@ export const voiceSettings = pgTable("voice_settings", {
   enabled: boolean("enabled").notNull().default(false),
   /** false = el asistente NO agenda por telefono: toma los datos y los pasa al equipo. */
   allowBooking: boolean("allow_booking").notNull().default(false),
+  /** Modulo restaurante: false = por telefono solo se consulta el menu; los pedidos los toma una persona. */
+  allowOrders: boolean("allow_orders").notNull().default(false),
   greeting: text("greeting"),
   voiceId: text("voice_id"),
   language: text("language").notNull().default("es-419"),

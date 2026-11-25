@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./plans": "./src/plans.ts",
     "./verticals": "./src/verticals.ts",
-    "./modules": "./src/modules.ts"
+    "./modules": "./src/modules.ts",
+    "./starter-menus": "./src/starter-menus.ts"
   },
   "scripts": {
     "test": "vitest run",

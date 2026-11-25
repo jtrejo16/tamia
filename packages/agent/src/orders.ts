@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { MenuData, MenuGroupRow, MenuItemRow } from "@empleado/db";
+import type { DeliveryZoneRow, MenuData, MenuGroupRow, MenuItemRow, RestaurantSettingsRow } from "@empleado/db";
 import { addDays, localDate, localParts, parseHM, weekdayOf, type LocalDate } from "@empleado/scheduling";
 import { formatMoney, weekdayName } from "./format";
 import type { ToolResult } from "./types";
@@ -108,11 +108,44 @@ export function describeLine(l: Pick<PricedLine, "name" | "quantity" | "modifier
  * Huella del carrito: el mismo pedido (mismos platillos, opciones, cantidades, pago y notas) da la misma huella.
  * Evita crear dos veces un pedido si se repite la confirmacion. El orden de las opciones no importa.
  */
-export function cartKey(lines: PricedLine[], paymentMethod: string, notes: string | null): string {
+export function cartKey(lines: PricedLine[], paymentMethod: string, notes: string | null, delivery: { zone: string; address: string } | null = null): string {
   const canon = lines
     .map((l) => [l.itemId, l.quantity, [...l.modifiers.map((m) => m.optionId)].sort(), l.notes ?? ""])
     .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
-  return createHash("sha256").update(JSON.stringify([canon, paymentMethod, notes ?? ""])).digest("hex").slice(0, 32);
+  return createHash("sha256").update(JSON.stringify([canon, paymentMethod, notes ?? "", delivery ? [delivery.zone, delivery.address.toLowerCase()] : null])).digest("hex").slice(0, 32);
+}
+
+// ------------------------------------------------------------------------------------------ domicilio
+
+const normText = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9ñ ]+/g, " ").replace(/\s+/g, " ").trim();
+
+/**
+ * Busca la zona de entrega a partir de la colonia que dio el cliente. Coincide sin importar mayusculas ni acentos: primero el
+ * nombre exacto; si no, una zona cuyo nombre aparezca dentro de lo escrito ("col. Centro, Merida" → "Centro") o que lo contenga.
+ * Solo cuentan las zonas activas. Devuelve null si ninguna encaja (el asistente debe decir cuales cubre el restaurante).
+ */
+export function matchZone(zones: DeliveryZoneRow[], text: string): DeliveryZoneRow | null {
+  const q = normText(text);
+  if (q.length < 3) return null;
+  const active = zones.filter((z) => z.active);
+  const exact = active.find((z) => normText(z.name) === q);
+  if (exact) return exact;
+  const inside = active.filter((z) => ` ${q} `.includes(` ${normText(z.name)} `)).sort((a, b) => b.name.length - a.name.length);
+  if (inside[0]) return inside[0];
+  const contains = active.filter((z) => ` ${normText(z.name)} `.includes(` ${q} `));
+  return contains.length === 1 ? contains[0]! : null;
+}
+
+export interface DeliveryQuote {
+  feeCents: number;
+  /** Pedido minimo que aplica a esta zona (el mayor entre el general y el de la zona). */
+  minOrderCents: number;
+  free: boolean;
+}
+
+export function deliveryQuote(settings: Pick<RestaurantSettingsRow, "minOrderCents" | "freeDeliveryFromCents">, zone: Pick<DeliveryZoneRow, "feeCents" | "minOrderCents">, subtotalCents: number): DeliveryQuote {
+  const free = settings.freeDeliveryFromCents !== null && settings.freeDeliveryFromCents > 0 && subtotalCents >= settings.freeDeliveryFromCents;
+  return { feeCents: free ? 0 : zone.feeCents, minOrderCents: Math.max(settings.minOrderCents, zone.minOrderCents), free };
 }
 
 // ------------------------------------------------------------------------------------------ horario

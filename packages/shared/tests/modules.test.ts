@@ -5,7 +5,13 @@ describe("modulos de un negocio", () => {
   it("un giro sin modulos propios (o desconocido, o sin giro) conserva el de citas: los negocios actuales no cambian", () => {
     for (const v of ["dental", "salud", "belleza", "generico", "giro-que-no-existe", "", null, undefined]) expect(modulesFor(v)).toEqual(["citas"]);
     expect(DEFAULT_MODULES).toEqual(["citas"]);
-    expect(VERTICAL_MODULES).toEqual({});
+    // Los giros de restaurante son los unicos con modulos propios.
+    expect(VERTICAL_MODULES).toEqual({ taqueria: ["restaurante"], pizzeria: ["restaurante"], restaurante: ["restaurante"] });
+  });
+
+  it("taqueria, pizzeria y restaurante arrancan con el modulo de restaurante (sin citas); profile.modules sigue mandando", () => {
+    for (const v of ["taqueria", "pizzeria", "restaurante"]) expect(modulesFor(v)).toEqual(["restaurante"]);
+    expect(modulesFor("taqueria", ["citas", "restaurante"])).toEqual(["citas", "restaurante"]);
   });
 
   it("profile.modules anula el del giro: enciende un modulo a un negocio concreto, o lo deja solo con el nucleo", () => {

@@ -14,6 +14,7 @@ import {
 } from "@empleado/db";
 import { hasModule, modulesFor } from "@empleado/shared";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { markStarterReviewed } from "./starter";
 import { parseCsv, parsePriceToCents, toCsv, unguard } from "./csv";
 import { can, fail, type Failure, type PanelContext, type Success } from "./types";
 
@@ -43,6 +44,7 @@ async function gate(tx: Tx, ctx: PanelContext, write: boolean): Promise<Failure<
 
 async function audit(tx: Tx, ctx: PanelContext, action: string, entityId: string | null, diff: Record<string, unknown>) {
   await tx.insert(auditLog).values({ tenantId: ctx.tenantId, userId: ctx.userId, action: `menu.${action}`, entity: "menu", entityId, diff });
+  await markStarterReviewed(tx, ctx.tenantId); // el menu de ejemplo cuenta como revisado en cuanto el dueno cambia algo
 }
 
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();

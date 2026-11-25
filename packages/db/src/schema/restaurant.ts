@@ -105,8 +105,11 @@ export const menuItemGroups = pgTable(
 
 // ------------------------------------------------------------------------------------------ pedidos
 
-/** Estados de un pedido: nuevo → preparando → listo → entregado (o cancelado en cualquier punto antes de entregar). */
-export const ORDER_STATUSES = ["new", "preparing", "ready", "delivered", "cancelled"] as const;
+/**
+ * Estados de un pedido: nuevo → preparando → listo → entregado (o cancelado en cualquier punto antes de entregar).
+ * Los pedidos a domicilio pasan ademas por "en camino" entre listo y entregado.
+ */
+export const ORDER_STATUSES = ["new", "preparing", "ready", "on_the_way", "delivered", "cancelled"] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 export const PAYMENT_METHODS = ["efectivo", "tarjeta", "transferencia"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
@@ -125,11 +128,38 @@ export const restaurantSettings = pgTable(
     paymentMethods: text("payment_methods").array().notNull().default(["efectivo", "tarjeta"]),
     /** Datos para pagar por transferencia (CLABE, titular), si se acepta. */
     transferInfo: text("transfer_info"),
+    /** Entrega a domicilio: solo a las zonas dadas de alta (delivery_zones). */
+    deliveryEnabled: boolean("delivery_enabled").notNull().default(false),
+    /** Minutos que se le dicen al cliente que tardara un pedido a domicilio. */
+    deliveryMinutes: integer("delivery_minutes").notNull().default(40),
+    /** Envio gratis desde este subtotal (null = nunca es gratis). */
+    freeDeliveryFromCents: integer("free_delivery_from_cents"),
     ...timestamps,
   },
   (t) => [
     check("restaurant_settings_prep_range", sql`${t.prepMinutes} between 5 and 240`),
+    check("restaurant_settings_delivery_range", sql`${t.deliveryMinutes} between 10 and 240`),
     check("restaurant_settings_min_nonneg", sql`${t.minOrderCents} >= 0`),
+  ],
+);
+
+/** Zonas de entrega a domicilio (colonias o sectores) con su costo de envio. */
+export const deliveryZones = pgTable(
+  "delivery_zones",
+  {
+    id: pk(),
+    tenantId: tenantRef(),
+    name: text("name").notNull(),
+    feeCents: integer("fee_cents").notNull().default(0),
+    /** Pedido minimo para esta zona (0 = el general). */
+    minOrderCents: integer("min_order_cents").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("delivery_zones_tenant_name_uq").on(t.tenantId, sql`lower(${t.name})`),
+    check("delivery_zones_amounts_nonneg", sql`${t.feeCents} >= 0 and ${t.minOrderCents} >= 0`),
   ],
 );
 
@@ -147,8 +177,8 @@ export const orders = pgTable(
     conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "set null" }),
     /** whatsapp | messenger | instagram | voice | panel */
     channel: text("channel").notNull(),
-    /** pickup (recoger). La entrega a domicilio llega despues. */
-    mode: text("mode").notNull().default("pickup"),
+    /** pickup (recoger en el local) | delivery (a domicilio). */
+    mode: text("mode").$type<"pickup" | "delivery">().notNull().default("pickup"),
     status: text("status").$type<OrderStatus>().notNull().default("new"),
     /** Datos del cliente al momento de pedir (el contacto puede cambiar despues). */
     customerName: text("customer_name").notNull(),
@@ -156,10 +186,17 @@ export const orders = pgTable(
     notes: text("notes"),
     paymentMethod: text("payment_method").$type<PaymentMethod>().notNull(),
     subtotalCents: integer("subtotal_cents").notNull(),
+    /** Costo de envio (0 en pedidos para recoger). El total ya lo incluye. */
+    deliveryFeeCents: integer("delivery_fee_cents").notNull().default(0),
+    /** Direccion de entrega tal como la dio el cliente (calle, numero, referencias). */
+    deliveryAddress: text("delivery_address"),
+    /** Zona de entrega al momento de pedir (el nombre se conserva aunque la zona cambie). */
+    deliveryZoneName: text("delivery_zone_name"),
     totalCents: integer("total_cents").notNull(),
     estimatedReadyAt: timestamp("estimated_ready_at", { withTimezone: true }),
     preparingAt: timestamp("preparing_at", { withTimezone: true }),
     readyAt: timestamp("ready_at", { withTimezone: true }),
+    onTheWayAt: timestamp("on_the_way_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     cancelReason: text("cancel_reason"),
@@ -176,8 +213,9 @@ export const orders = pgTable(
     uniqueIndex("orders_tenant_number_uq").on(t.tenantId, t.number),
     index("orders_tenant_status_idx").on(t.tenantId, t.status, t.createdAt),
     index("orders_contact_idx").on(t.contactId),
-    check("orders_status_valid", sql`${t.status} in ('new', 'preparing', 'ready', 'delivered', 'cancelled')`),
-    check("orders_totals_nonneg", sql`${t.subtotalCents} >= 0 and ${t.totalCents} >= 0`),
+    check("orders_status_valid", sql`${t.status} in ('new', 'preparing', 'ready', 'on_the_way', 'delivered', 'cancelled')`),
+    check("orders_mode_valid", sql`${t.mode} in ('pickup', 'delivery')`),
+    check("orders_totals_nonneg", sql`${t.subtotalCents} >= 0 and ${t.totalCents} >= 0 and ${t.deliveryFeeCents} >= 0`),
   ],
 );
 

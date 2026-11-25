@@ -134,14 +134,14 @@ Se cambian las instrucciones del asistente. Los servicios, las preguntas frecuen
     if (!ok) return;
     setBusy("giro");
     setNotice(null);
-    const res = await api<{ ok: true; changed: boolean; privacyChanged: boolean }>("/api/operator/vertical", { method: "POST", body: { tenantId, vertical: to } });
+    const res = await api<{ ok: true; changed: boolean; privacyChanged: boolean; starterApplied?: boolean }>("/api/operator/vertical", { method: "POST", body: { tenantId, vertical: to } });
     setBusy(null);
     if (!res.ok) setNotice({ tone: "rose", text: res.message });
     else if (!res.changed) setNotice({ tone: "amber", text: "El negocio ya tenía ese giro." });
     else
       setNotice({
         tone: res.privacyChanged ? "amber" : "green",
-        text: `Giro cambiado a «${giroLabel(to)}» ✓${res.privacyChanged ? " Ojo: cambió la política de datos con el modelo de IA (los giros de salud van con restricción; los demás no)." : ""}`,
+        text: `Giro cambiado a «${giroLabel(to)}» ✓${res.starterApplied ? " Se cargó un menú de ejemplo (el negocio no tenía menú)." : ""}${res.privacyChanged ? " Ojo: cambió la política de datos con el modelo de IA (los giros de salud van con restricción; los demás no)." : ""}`,
       });
     setVerticalPick(null);
     await reload();
@@ -337,6 +337,7 @@ Se cambian las instrucciones del asistente. Los servicios, las preguntas frecuen
           <Row label="Número" value={d.voice.phoneNumber || "—"} />
           <Row label="Transferencia a recepción" value={d.voice.transferNumber || "—"} />
           <Row label="Agenda por teléfono" value={<OnOff ok={d.voice.allowBooking} on="Sí" off="No" />} />
+          <Row label="Pedidos por teléfono" value={<OnOff ok={d.voice.allowOrders} on="Sí" off="No" />} />
           {!d.voice.retellConfigured && <p className="mt-2 text-xs text-amber-700">Retell no está configurado en el servidor.</p>}
         </Card>
 

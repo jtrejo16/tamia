@@ -55,6 +55,8 @@ export interface TenantProfile {
   /** Modulos encendidos a ESTE negocio (anula los de su giro). Ver modulesFor en @empleado/shared. */
   modules?: string[];
   depositPolicy?: string;
+  /** Giros de restaurante: el menu de ejemplo con el que arranco y si el dueno ya lo reviso (ver packages/inbox/src/starter.ts). */
+  starterMenu?: { template: string; reviewed: boolean };
 }
 
 /** El negocio cliente. No lleva tenant_id: su propio id es el tenant. */

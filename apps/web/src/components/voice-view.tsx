@@ -66,8 +66,11 @@ export function CallsView() {
 
 /** Pestaña "Llamadas" de Ajustes: activar el asistente telefonico y sincronizarlo con Retell. */
 export function VoiceTab({ editable }: { editable: boolean }) {
+  const panel = usePanel();
+  const restaurant = panel.modules.includes("restaurante");
+  const citas = panel.modules.includes("citas");
   const [s, setS] = useState<Settings | null>(null);
-  const [form, setForm] = useState({ enabled: false, allowBooking: false, greeting: "", voiceId: "", phoneNumber: "", transferNumber: "" });
+  const [form, setForm] = useState({ enabled: false, allowBooking: false, allowOrders: false, greeting: "", voiceId: "", phoneNumber: "", transferNumber: "" });
   const [notice, setNotice] = useState<{ tone: "green" | "rose" | "amber"; text: string; details?: string[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [voices, setVoices] = useState<VoiceOption[]>([]);
@@ -77,7 +80,7 @@ export function VoiceTab({ editable }: { editable: boolean }) {
     const res = await api<{ ok: true; settings: Settings }>("/api/voice/settings");
     if (res.ok) {
       setS(res.settings);
-      setForm({ enabled: res.settings.enabled, allowBooking: res.settings.allowBooking, greeting: res.settings.greeting, voiceId: res.settings.voiceId, phoneNumber: res.settings.phoneNumber, transferNumber: res.settings.transferNumber });
+      setForm({ enabled: res.settings.enabled, allowBooking: res.settings.allowBooking, allowOrders: res.settings.allowOrders, greeting: res.settings.greeting, voiceId: res.settings.voiceId, phoneNumber: res.settings.phoneNumber, transferNumber: res.settings.transferNumber });
     } else setNotice({ tone: "rose", text: res.message });
   }, []);
   useEffect(() => {
@@ -138,11 +141,18 @@ export function VoiceTab({ editable }: { editable: boolean }) {
         <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
           <input type="checkbox" disabled={disabled} checked={form.enabled} onChange={(e) => setForm((p) => ({ ...p, enabled: e.target.checked }))} /> Activar el asistente telefónico
         </label>
-        <label className="flex items-start gap-2 text-sm text-slate-700">
+        {restaurant && (
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input type="checkbox" className="mt-1" disabled={disabled} checked={form.allowOrders} onChange={(e) => setForm((p) => ({ ...p, allowOrders: e.target.checked }))} />
+            <span><span className="font-medium">Permitir que tome pedidos por teléfono.</span><br />
+              <span className="text-slate-500">Si lo dejas apagado, el asistente informa el menú y precios, y toma los datos para que una persona confirme el pedido. Si lo enciendes, el pedido se crea después de que el cliente confirme de viva voz y aparece en Pedidos. Vuelve a sincronizar con Retell después de cambiarlo.</span></span>
+          </label>
+        )}
+        {citas && <label className="flex items-start gap-2 text-sm text-slate-700">
           <input type="checkbox" className="mt-1" disabled={disabled} checked={form.allowBooking} onChange={(e) => setForm((p) => ({ ...p, allowBooking: e.target.checked }))} />
           <span><span className="font-medium">Permitir que agende, cambie y cancele citas por teléfono.</span><br />
             <span className="text-slate-500">Si lo dejas apagado, el asistente atiende dudas y toma los datos para que una persona confirme la cita. Si lo enciendes, agenda directo después de que el cliente confirme de viva voz, sin pasar por Aprobaciones.</span></span>
-        </label>
+        </label>}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block text-sm font-medium text-slate-700 sm:col-span-2">Saludo (opcional)

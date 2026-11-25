@@ -16,7 +16,11 @@ export type ModuleId = (typeof MODULE_IDS)[number];
 export const DEFAULT_MODULES: readonly ModuleId[] = ["citas"];
 
 /** Modulos por giro (id del giro → modulos). Un giro que no aparece aqui usa DEFAULT_MODULES. */
-export const VERTICAL_MODULES: Readonly<Record<string, readonly ModuleId[]>> = {};
+export const VERTICAL_MODULES: Readonly<Record<string, readonly ModuleId[]>> = {
+  taqueria: ["restaurante"],
+  pizzeria: ["restaurante"],
+  restaurante: ["restaurante"],
+};
 
 const VALID = new Set<string>(MODULE_IDS);
 export const isModuleId = (v: unknown): v is ModuleId => typeof v === "string" && VALID.has(v);

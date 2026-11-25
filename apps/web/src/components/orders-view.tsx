@@ -14,23 +14,47 @@ interface Settings {
   minOrderCents: number;
   paymentMethods: string[];
   transferInfo: string | null;
+  deliveryEnabled: boolean;
+  deliveryMinutes: number;
+  freeDeliveryFromCents: number | null;
+}
+
+interface Zone {
+  id: string;
+  name: string;
+  feeCents: number;
+  minOrderCents: number;
+  active: boolean;
 }
 
 const field = "w-full rounded-lg bg-white px-3 py-2 text-sm text-slate-900 ring-1 ring-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600";
 const pesos = (cents: number) => (cents / 100).toLocaleString("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: cents % 100 === 0 ? 0 : 2 });
+const toPesosText = (cents: number) => (cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2));
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
 const CHANNEL: Record<string, string> = { whatsapp: "WhatsApp", messenger: "Messenger", instagram: "Instagram", voice: "Llamada", panel: "Panel" };
 const PAY: Record<string, string> = { efectivo: "Efectivo", tarjeta: "Tarjeta", transferencia: "Transferencia" };
 const COLUMNS: Array<{ status: Status; title: string; tone: string }> = [
   { status: "new", title: "Nuevos", tone: "ring-amber-300 bg-amber-50/60" },
   { status: "preparing", title: "Preparando", tone: "ring-sky-300 bg-sky-50/60" },
-  { status: "ready", title: "Listos para recoger", tone: "ring-green-300 bg-green-50/60" },
+  { status: "ready", title: "Listos", tone: "ring-green-300 bg-green-50/60" },
+  { status: "on_the_way", title: "En camino", tone: "ring-violet-300 bg-violet-50/60" },
 ];
-const NEXT: Partial<Record<Status, { to: Status; label: string }>> = {
-  new: { to: "preparing", label: "Empezar a preparar" },
-  preparing: { to: "ready", label: "Marcar listo" },
-  ready: { to: "delivered", label: "Marcar entregado" },
-};
+/** El siguiente paso de un pedido: los de domicilio pasan por «en camino». */
+function nextStep(o: OrderView): { to: Status; label: string } | null {
+  const delivery = o.mode === "delivery";
+  switch (o.status) {
+    case "new":
+      return { to: "preparing", label: "Empezar a preparar" };
+    case "preparing":
+      return { to: "ready", label: delivery ? "Listo para enviar" : "Marcar listo" };
+    case "ready":
+      return delivery ? { to: "on_the_way", label: "Salió a entregar" } : { to: "delivered", label: "Marcar entregado" };
+    case "on_the_way":
+      return { to: "delivered", label: "Marcar entregado" };
+    default:
+      return null;
+  }
+}
 
 /** Un pitido corto con Web Audio (sin archivos). Falla en silencio si el navegador lo bloquea. */
 function beep() {
@@ -51,7 +75,7 @@ function beep() {
 }
 
 function OrderCard({ order, canEdit, busy, onMove, onCancel }: { order: OrderView; canEdit: boolean; busy: boolean; onMove: (to: Status) => void; onCancel: () => void }) {
-  const next = NEXT[order.status];
+  const next = nextStep(order);
   return (
     <article className="space-y-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200" aria-label={`Pedido ${order.number}`}>
       <header className="flex items-start justify-between gap-2">
@@ -76,7 +100,14 @@ function OrderCard({ order, canEdit, busy, onMove, onCancel }: { order: OrderVie
         ))}
       </ul>
       {order.notes && <p className="rounded-lg bg-slate-50 px-2 py-1 text-xs text-slate-700">Nota: {order.notes}</p>}
+      {order.mode === "delivery" && (
+        <p className="rounded-lg bg-violet-50 px-2 py-1 text-xs text-violet-900">
+          <span className="font-semibold">Entregar en:</span> {order.deliveryAddress}
+          {order.deliveryZoneName ? `, col. ${order.deliveryZoneName}` : ""} · envío {order.deliveryFeeCents > 0 ? pesos(order.deliveryFeeCents) : "gratis"}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        <Badge tone={order.mode === "delivery" ? "sky" : "teal"}>{order.mode === "delivery" ? "A domicilio" : "Para recoger"}</Badge>
         <Badge tone="slate">{PAY[order.paymentMethod] ?? order.paymentMethod}</Badge>
         {order.estimatedReadyAt && (order.status === "new" || order.status === "preparing") && <Badge tone="sky">Prometido {hhmm(order.estimatedReadyAt)}</Badge>}
         {order.status === "cancelled" && <Badge tone="rose">{order.cancelledBy === "cliente" ? "Lo canceló el cliente" : "Cancelado"}</Badge>}
@@ -97,14 +128,18 @@ function OrderCard({ order, canEdit, busy, onMove, onCancel }: { order: OrderVie
   );
 }
 
-function SettingsCard({ settings, canEdit, onSaved }: { settings: Settings; canEdit: boolean; onSaved: () => void }) {
+function SettingsCard({ settings, zones: initialZones, canEdit, onSaved }: { settings: Settings; zones: Zone[]; canEdit: boolean; onSaved: () => void }) {
   const [form, setForm] = useState({
     acceptingOrders: settings.acceptingOrders,
     prepMinutes: String(settings.prepMinutes),
     minOrderPesos: String(settings.minOrderCents / 100),
     paymentMethods: settings.paymentMethods,
     transferInfo: settings.transferInfo ?? "",
+    deliveryEnabled: settings.deliveryEnabled,
+    deliveryMinutes: String(settings.deliveryMinutes),
+    freeDeliveryFromPesos: settings.freeDeliveryFromCents ? toPesosText(settings.freeDeliveryFromCents) : "",
   });
+  const [zones, setZones] = useState(initialZones.map((z) => ({ id: z.id as string | undefined, name: z.name, feePesos: toPesosText(z.feeCents), minOrderPesos: z.minOrderCents ? toPesosText(z.minOrderCents) : "", active: z.active })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [saved, setSaved] = useState(false);
@@ -115,7 +150,7 @@ function SettingsCard({ settings, canEdit, onSaved }: { settings: Settings; canE
     setSaving(true);
     setError(null);
     setSaved(false);
-    const r = await api("/api/orders/settings", { method: "POST", body: { ...next, prepMinutes: Number(next.prepMinutes), minOrderPesos: Number(next.minOrderPesos || 0) } });
+    const r = await api("/api/orders/settings", { method: "POST", body: { ...next, prepMinutes: Number(next.prepMinutes), deliveryMinutes: Number(next.deliveryMinutes), minOrderPesos: Number(next.minOrderPesos || 0), zones: zones.filter((z) => z.name.trim() || z.id) } });
     setSaving(false);
     if (!r.ok) return setError(r);
     setSaved(true);
@@ -167,6 +202,49 @@ function SettingsCard({ settings, canEdit, onSaved }: { settings: Settings; canE
           </label>
         )}
       </fieldset>
+      <fieldset className="space-y-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
+        <legend className="px-1 text-sm font-semibold text-slate-900">Entrega a domicilio</legend>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={form.deliveryEnabled} disabled={!canEdit} onChange={(e) => setForm({ ...form, deliveryEnabled: e.target.checked })} />
+          Ofrecer entrega a domicilio (solo a las zonas de abajo)
+        </label>
+        {form.deliveryEnabled && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-xs font-medium text-slate-700">
+                Tiempo de entrega (minutos)
+                <input className={cx(field, "mt-1")} inputMode="numeric" value={form.deliveryMinutes} disabled={!canEdit} onChange={(e) => setForm({ ...form, deliveryMinutes: e.target.value })} />
+              </label>
+              <label className="block text-xs font-medium text-slate-700">
+                Envío gratis desde (pesos, vacío = nunca)
+                <input className={cx(field, "mt-1")} inputMode="decimal" value={form.freeDeliveryFromPesos} disabled={!canEdit} onChange={(e) => setForm({ ...form, freeDeliveryFromPesos: e.target.value })} />
+              </label>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-slate-700">Zonas de entrega (colonias) y costo de envío</p>
+              {zones.map((z, i) => (
+                <div key={z.id ?? `n${i}`} className="grid grid-cols-[1fr_88px_88px_auto_auto] items-center gap-2">
+                  <input className={field} aria-label={`Zona ${i + 1}`} placeholder="Colonia o zona" value={z.name} disabled={!canEdit} onChange={(e) => setZones((zs) => zs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
+                  <input className={field} aria-label={`Envío de la zona ${i + 1}`} placeholder="Envío $" inputMode="decimal" value={z.feePesos} disabled={!canEdit} onChange={(e) => setZones((zs) => zs.map((x, j) => (j === i ? { ...x, feePesos: e.target.value } : x)))} />
+                  <input className={field} aria-label={`Mínimo de la zona ${i + 1}`} placeholder="Mín. $" inputMode="decimal" value={z.minOrderPesos} disabled={!canEdit} onChange={(e) => setZones((zs) => zs.map((x, j) => (j === i ? { ...x, minOrderPesos: e.target.value } : x)))} />
+                  <label className="flex items-center gap-1 text-xs text-slate-600">
+                    <input type="checkbox" checked={z.active} disabled={!canEdit} onChange={(e) => setZones((zs) => zs.map((x, j) => (j === i ? { ...x, active: e.target.checked } : x)))} /> Activa
+                  </label>
+                  {canEdit && (
+                    <button className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100" aria-label={`Quitar zona ${i + 1}`} onClick={() => setZones((zs) => zs.filter((_, j) => j !== i))}>✕</button>
+                  )}
+                </div>
+              ))}
+              {canEdit && (
+                <Button variant="secondary" onClick={() => setZones((zs) => [...zs, { id: undefined, name: "", feePesos: "", minOrderPesos: "", active: true }])}>
+                  + Agregar zona
+                </Button>
+              )}
+              <p className="text-xs text-slate-500">El asistente solo entrega en estas zonas y cobra el envío que pongas aquí. «Mín.» es el pedido mínimo de esa zona (vacío = el general).</p>
+            </div>
+          </>
+        )}
+      </fieldset>
       {error && (
         <Alert>
           <p>{error.message}</p>
@@ -189,7 +267,7 @@ export function OrdersView() {
   const [tab, setTab] = useState<"tablero" | "historial" | "ajustes">("tablero");
   const active = usePolling<{ ok: true; orders: OrderView[] }>(tab === "tablero" ? "/api/orders?scope=active" : null, 5000);
   const history = usePolling<{ ok: true; orders: OrderView[] }>(tab === "historial" ? "/api/orders?scope=history" : null, 15000);
-  const settings = usePolling<{ ok: true; settings: Settings }>(tab === "ajustes" || tab === "tablero" ? "/api/orders/settings" : null, 30000);
+  const settings = usePolling<{ ok: true; settings: Settings; zones: Zone[] }>(tab === "ajustes" || tab === "tablero" ? "/api/orders/settings" : null, 30000);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<OrderView | null>(null);
@@ -244,7 +322,7 @@ export function OrdersView() {
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-lg font-semibold text-slate-900">Pedidos</h1>
-            <p className="text-sm text-slate-500">Pedidos para recoger que toma el asistente. Cambia su estado y el cliente recibe el aviso.</p>
+            <p className="text-sm text-slate-500">Pedidos que toma el asistente, para recoger o a domicilio. Cambia su estado y el cliente recibe el aviso.</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="secondary" onClick={toggleSound} aria-pressed={sound}>
@@ -270,8 +348,8 @@ export function OrdersView() {
           ) : orders.length === 0 ? (
             <EmptyState title="No hay pedidos en curso" hint="Cuando un cliente pida por WhatsApp, Messenger o Instagram, aparecerá aquí al instante." />
           ) : (
-            <div className="grid gap-4 lg:grid-cols-3">
-              {COLUMNS.map((col) => {
+            <div className={cx("grid gap-4", orders.some((o) => o.mode === "delivery") ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
+              {COLUMNS.filter((c) => c.status !== "on_the_way" || orders.some((o) => o.mode === "delivery")).map((col) => {
                 const list = orders.filter((o) => o.status === col.status);
                 return (
                   <section key={col.status} className={cx("space-y-3 rounded-2xl p-3 ring-1", col.tone)} aria-label={col.title}>
@@ -301,7 +379,7 @@ export function OrdersView() {
             </div>
           ))}
 
-        {tab === "ajustes" && (settings.data ? <SettingsCard key={JSON.stringify(settings.data.settings)} settings={settings.data.settings} canEdit={canEdit} onSaved={() => void settings.reload()} /> : <div className="flex justify-center p-10"><Spinner /></div>)}
+        {tab === "ajustes" && (settings.data ? <SettingsCard key={JSON.stringify([settings.data.settings, settings.data.zones])} settings={settings.data.settings} zones={settings.data.zones} canEdit={canEdit} onSaved={() => void settings.reload()} /> : <div className="flex justify-center p-10"><Spinner /></div>)}
       </div>
 
       {cancelling && (

@@ -2,6 +2,8 @@ import {
   auditLog,
   channels,
   conversations,
+  deliveryZones,
+  loadDeliveryZones,
   loadRestaurantSettings,
   messages,
   orderItemModifiers,
@@ -12,13 +14,14 @@ import {
   PAYMENT_METHODS,
   withTenant,
   type Database,
+  type DeliveryZoneRow,
   type OrderStatus,
   type RestaurantSettingsRow,
   type Tx,
 } from "@empleado/db";
 import { isWithinServiceWindow } from "@empleado/channels";
 import { hasModule, modulesFor } from "@empleado/shared";
-import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { can, fail, type EnqueueOutbound, type Failure, type PanelContext, type Success } from "./types";
 
 /**
@@ -54,6 +57,10 @@ export interface OrderView {
   number: number;
   status: OrderStatus;
   channel: string;
+  mode: "pickup" | "delivery";
+  deliveryAddress: string | null;
+  deliveryZoneName: string | null;
+  deliveryFeeCents: number;
   conversationId: string | null;
   customerName: string;
   customerPhone: string | null;
@@ -79,7 +86,7 @@ export async function listOrders(db: Database, ctx: PanelContext, which: OrderSc
     if (await gate(tx, ctx, false)) return fail("module_off" as const);
     const rows =
       which === "active"
-        ? await tx.select().from(orders).where(inArray(orders.status, ["new", "preparing", "ready"])).orderBy(asc(orders.createdAt)).limit(200)
+        ? await tx.select().from(orders).where(inArray(orders.status, ["new", "preparing", "ready", "on_the_way"])).orderBy(asc(orders.createdAt)).limit(200)
         : await tx
             .select()
             .from(orders)
@@ -96,6 +103,10 @@ export async function listOrders(db: Database, ctx: PanelContext, which: OrderSc
         number: o.number,
         status: o.status,
         channel: o.channel,
+        mode: o.mode,
+        deliveryAddress: o.deliveryAddress,
+        deliveryZoneName: o.deliveryZoneName,
+        deliveryFeeCents: o.deliveryFeeCents,
         conversationId: o.conversationId,
         customerName: o.customerName,
         customerPhone: o.customerPhone,
@@ -132,14 +143,24 @@ export async function countNewOrders(db: Database, ctx: PanelContext): Promise<n
 
 // --------------------------------------------------------------------------------------- estados
 
-/** Transiciones permitidas. Se puede saltar "preparando" (pedido rapido), pero no volver atras. */
-const NEXT: Record<OrderStatus, OrderStatus[]> = {
-  new: ["preparing", "ready", "cancelled"],
-  preparing: ["ready", "cancelled"],
-  ready: ["delivered", "cancelled"],
-  delivered: [],
-  cancelled: [],
-};
+/**
+ * Transiciones permitidas. Se puede saltar "preparando" (pedido rapido), pero no volver atras. "En camino" solo existe en los
+ * pedidos a domicilio (y ahi es opcional: se puede pasar de listo a entregado).
+ */
+function nextStates(status: OrderStatus, mode: string): OrderStatus[] {
+  switch (status) {
+    case "new":
+      return ["preparing", "ready", "cancelled"];
+    case "preparing":
+      return ["ready", "cancelled"];
+    case "ready":
+      return mode === "delivery" ? ["on_the_way", "delivered", "cancelled"] : ["delivered", "cancelled"];
+    case "on_the_way":
+      return ["delivered", "cancelled"];
+    default:
+      return [];
+  }
+}
 
 export type NoticeResult = "sent" | "window_closed" | "no_conversation" | "voice" | "not_needed";
 
@@ -166,7 +187,7 @@ export async function setOrderStatus(
     if (denied) return denied;
     const [order] = await tx.select().from(orders).where(eq(orders.id, orderId));
     if (!order) return fail("not_found" as const);
-    if (!NEXT[order.status].includes(to)) return fail("invalid_transition" as const);
+    if (!nextStates(order.status, order.mode).includes(to)) return fail("invalid_transition" as const);
 
     // Solo si sigue en el estado que vimos: dos personas pueden tocar el mismo pedido a la vez.
     const patch: Partial<typeof orders.$inferInsert> = { status: to, updatedAt: now };
@@ -174,6 +195,10 @@ export async function setOrderStatus(
     if (to === "ready") {
       patch.readyAt = now;
       if (!order.preparingAt) patch.preparingAt = now;
+    }
+    if (to === "on_the_way") {
+      patch.onTheWayAt = now;
+      if (!order.readyAt) patch.readyAt = now;
     }
     if (to === "delivered") {
       patch.deliveredAt = now;
@@ -188,31 +213,49 @@ export async function setOrderStatus(
     if (changed.length === 0) return fail("invalid_transition" as const);
     await tx.insert(auditLog).values({ tenantId: ctx.tenantId, userId: ctx.userId, action: "order.status", entity: "order", entityId: orderId, diff: { number: order.number, from: order.status, to } });
 
-    // Aviso al cliente: solo al quedar listo o al cancelar.
+    // Aviso al cliente: al quedar listo para recoger, al salir a domicilio y al cancelar.
     let notice: NoticeResult = "not_needed";
     let messageId: string | null = null;
-    if (to === "ready" || to === "cancelled") {
+    const tells = to === "cancelled" || to === "on_the_way" || (to === "ready" && order.mode === "pickup");
+    if (tells) {
       const text =
         to === "ready"
           ? `¡Tu pedido #${order.number} ya está listo para recoger! Total: ${money(order.totalCents)}.`
-          : `Tu pedido #${order.number} fue cancelado por el restaurante${reason ? `: ${reason}` : ""}. Disculpa las molestias; si quieres, escríbenos y lo resolvemos.`;
-      if (!order.conversationId) notice = "no_conversation";
+          : to === "on_the_way"
+            ? `¡Tu pedido #${order.number} va en camino a tu domicilio! Total a pagar: ${money(order.totalCents)}.`
+            : `Tu pedido #${order.number} fue cancelado por el restaurante${reason ? `: ${reason}` : ""}. Disculpa las molestias; si quieres, escríbenos y lo resolvemos.`;
+      // Una llamada no se contesta por texto: si el cliente tambien nos escribe por otro canal (WhatsApp...) y su ventana de
+      // 24 h sigue abierta, el aviso va por ahi. Si no, el cambio se guarda y el panel avisa que no se pudo notificar.
+      type Target = { id: string; channelId: string; lastInboundAt: Date | null };
+      let target: Target | null = null;
+      let reachedBy: NoticeResult | null = null;
+      if (!order.conversationId) reachedBy = "no_conversation";
       else {
         const [conv] = await tx.select().from(conversations).where(eq(conversations.id, order.conversationId));
         const [channel] = conv ? await tx.select({ type: channels.type }).from(channels).where(eq(channels.id, conv.channelId)) : [];
-        if (!conv) notice = "no_conversation";
-        else if (channel?.type === "voice") notice = "voice";
-        else if (!isWithinServiceWindow(conv.lastInboundAt, now)) notice = "window_closed";
-        else {
-          const [msg] = await tx
-            .insert(messages)
-            .values({ tenantId: ctx.tenantId, conversationId: conv.id, channelId: conv.channelId, direction: "out", sender: "human", type: "text", body: text, status: "queued" })
-            .returning({ id: messages.id });
-          await tx.update(conversations).set({ lastMessageAt: now, updatedAt: now }).where(eq(conversations.id, conv.id));
-          messageId = msg!.id;
-          notice = "sent";
-        }
+        if (!conv) reachedBy = "no_conversation";
+        else if (channel?.type === "voice") {
+          const [alt] = await tx
+            .select({ id: conversations.id, channelId: conversations.channelId, lastInboundAt: conversations.lastInboundAt })
+            .from(conversations)
+            .innerJoin(channels, eq(channels.id, conversations.channelId))
+            .where(and(eq(conversations.contactId, order.contactId), ne(channels.type, "voice"), isNotNull(conversations.lastInboundAt)))
+            .orderBy(desc(conversations.lastInboundAt))
+            .limit(1);
+          if (alt && isWithinServiceWindow(alt.lastInboundAt, now)) target = alt;
+          else reachedBy = "voice";
+        } else if (!isWithinServiceWindow(conv.lastInboundAt, now)) reachedBy = "window_closed";
+        else target = { id: conv.id, channelId: conv.channelId, lastInboundAt: conv.lastInboundAt };
       }
+      if (target) {
+        const [msg] = await tx
+          .insert(messages)
+          .values({ tenantId: ctx.tenantId, conversationId: target.id, channelId: target.channelId, direction: "out", sender: "human", type: "text", body: text, status: "queued" })
+          .returning({ id: messages.id });
+        await tx.update(conversations).set({ lastMessageAt: now, updatedAt: now }).where(eq(conversations.id, target.id));
+        messageId = msg!.id;
+        notice = "sent";
+      } else notice = reachedBy ?? "no_conversation";
     }
     return { ok: true as const, status: to, notice, messageId };
   });
@@ -224,49 +267,114 @@ export async function setOrderStatus(
 // -------------------------------------------------------------------------------------- ajustes
 
 export type SettingsFail = Failure<"forbidden" | "module_off"> | (Failure<"invalid"> & { details: string[] });
+export type SettingsView = { settings: RestaurantSettingsRow; zones: DeliveryZoneRow[] };
 
-export async function getRestaurantSettings(db: Database, ctx: PanelContext): Promise<Success<{ settings: RestaurantSettingsRow }> | Failure<"module_off">> {
+export async function getRestaurantSettings(db: Database, ctx: PanelContext): Promise<Success<SettingsView> | Failure<"module_off">> {
   return withTenant(db, scope(ctx), async (tx) => {
     if (await gate(tx, ctx, false)) return fail("module_off" as const);
-    return { ok: true as const, settings: await loadRestaurantSettings(tx) };
+    return { ok: true as const, settings: await loadRestaurantSettings(tx), zones: await loadDeliveryZones(tx) };
   });
 }
 
-export async function saveRestaurantSettings(db: Database, ctx: PanelContext, input: Record<string, unknown>): Promise<Success<{ settings: RestaurantSettingsRow }> | SettingsFail> {
+const MAX_ZONES = 60;
+const normName = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Pesos (numero o texto) a centavos (vacio = 0), o null si no es un monto valido. */
+function pesosToCents(v: unknown, max: number): number | null {
+  if (v === "" || v === null || v === undefined) return 0; // vacio = sin monto
+  const n = typeof v === "string" ? Number(v.replace(/[$,\s]/g, "")) : Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > max) return null;
+  return Math.round(n * 100);
+}
+
+/**
+ * Guarda los ajustes de pedidos y, si vienen, las zonas de entrega (la lista completa: las que ya no vengan se borran; los
+ * pedidos ya hechos conservan el nombre de su zona). Para ofrecer domicilio hace falta al menos una zona activa.
+ */
+export async function saveRestaurantSettings(db: Database, ctx: PanelContext, input: Record<string, unknown>): Promise<Success<SettingsView> | SettingsFail> {
   const errors: string[] = [];
   const prep = Number(input.prepMinutes);
   if (!Number.isInteger(prep) || prep < 5 || prep > 240) errors.push("El tiempo de preparación debe ser de 5 a 240 minutos.");
-  const minPesos = Number(input.minOrderPesos ?? 0);
-  if (!Number.isFinite(minPesos) || minPesos < 0 || minPesos > 100_000) errors.push("El pedido mínimo no es válido.");
+  const minOrder = pesosToCents(input.minOrderPesos ?? 0, 100_000);
+  if (minOrder === null) errors.push("El pedido mínimo no es válido.");
   const methods = Array.isArray(input.paymentMethods) ? [...new Set(input.paymentMethods.filter((m): m is string => typeof m === "string"))] : [];
   if (methods.length === 0 || methods.some((m) => !(PAYMENT_METHODS as readonly string[]).includes(m))) errors.push("Elige al menos una forma de pago válida.");
   const transferInfo = typeof input.transferInfo === "string" ? input.transferInfo.trim().slice(0, 300) : "";
   if (methods.includes("transferencia") && !transferInfo) errors.push("Para aceptar transferencias escribe los datos (CLABE y titular).");
+
+  const deliveryEnabled = input.deliveryEnabled === true;
+  const deliveryMinutes = Number(input.deliveryMinutes ?? 40);
+  if (!Number.isInteger(deliveryMinutes) || deliveryMinutes < 10 || deliveryMinutes > 240) errors.push("El tiempo de entrega debe ser de 10 a 240 minutos.");
+  const freeRaw = input.freeDeliveryFromPesos;
+  const freeFrom = freeRaw === undefined || freeRaw === null || freeRaw === "" || Number(freeRaw) === 0 ? null : pesosToCents(freeRaw, 100_000);
+  if (freeRaw !== undefined && freeRaw !== null && freeRaw !== "" && Number(freeRaw) !== 0 && freeFrom === null) errors.push("El monto de envío gratis no es válido.");
+
+  type ZoneInput = { id: string | null; name: string; feeCents: number; minOrderCents: number; active: boolean };
+  let zonesIn: ZoneInput[] | null = null;
+  if (input.zones !== undefined) {
+    const raw = Array.isArray(input.zones) ? input.zones : [];
+    if (raw.length > MAX_ZONES) errors.push(`Máximo ${MAX_ZONES} zonas.`);
+    const seen = new Set<string>();
+    zonesIn = [];
+    for (const [n, z] of raw.slice(0, MAX_ZONES).entries()) {
+      const r = (z ?? {}) as Record<string, unknown>;
+      const name = typeof r.name === "string" ? r.name.trim() : "";
+      const fee = pesosToCents(r.feePesos ?? 0, 5_000);
+      const zmin = pesosToCents(r.minOrderPesos ?? 0, 100_000);
+      if (!name || name.length > 80) errors.push(`La zona ${n + 1} necesita un nombre (máximo 80 caracteres).`);
+      else if (seen.has(normName(name))) errors.push(`La zona «${name}» está repetida.`);
+      if (fee === null) errors.push(`El costo de envío de «${name || n + 1}» no es válido (0 a $5,000).`);
+      if (zmin === null) errors.push(`El pedido mínimo de «${name || n + 1}» no es válido.`);
+      seen.add(normName(name));
+      zonesIn.push({ id: typeof r.id === "string" && UUID.test(r.id) ? r.id : null, name, feeCents: fee ?? 0, minOrderCents: zmin ?? 0, active: r.active !== false });
+    }
+  }
   if (errors.length > 0) return { ok: false, error: "invalid", details: errors };
 
   return withTenant(db, scope(ctx), async (tx) => {
     const denied = await gate(tx, ctx, true);
     if (denied) return denied;
+    const effectiveZones = zonesIn ?? (await loadDeliveryZones(tx));
+    if (deliveryEnabled && !effectiveZones.some((z) => z.active)) return { ok: false as const, error: "invalid" as const, details: ["Para ofrecer entrega a domicilio agrega al menos una zona activa."] };
+
     const values = {
       acceptingOrders: input.acceptingOrders !== false,
       prepMinutes: prep,
-      minOrderCents: Math.round(minPesos * 100),
+      minOrderCents: minOrder!,
       paymentMethods: methods,
       transferInfo: methods.includes("transferencia") ? transferInfo : null,
+      deliveryEnabled,
+      deliveryMinutes,
+      freeDeliveryFromCents: freeFrom,
       updatedAt: new Date(),
     };
-    await tx
-      .insert(restaurantSettings)
-      .values({ tenantId: ctx.tenantId, ...values })
-      .onConflictDoUpdate({ target: restaurantSettings.tenantId, set: values });
+    await tx.insert(restaurantSettings).values({ tenantId: ctx.tenantId, ...values }).onConflictDoUpdate({ target: restaurantSettings.tenantId, set: values });
+
+    if (zonesIn) {
+      const existing = await tx.select({ id: deliveryZones.id }).from(deliveryZones);
+      const known = new Set(existing.map((z) => z.id));
+      const keep = new Set(zonesIn.flatMap((z) => (z.id && known.has(z.id) ? [z.id] : [])));
+      const drop = existing.filter((z) => !keep.has(z.id)).map((z) => z.id);
+      // Las que se borran salen primero; las que se quedan toman un nombre temporal para poder intercambiar nombres sin chocar con el indice unico.
+      if (drop.length > 0) await tx.delete(deliveryZones).where(inArray(deliveryZones.id, drop));
+      for (const z of zonesIn) {
+        if (z.id && known.has(z.id)) await tx.update(deliveryZones).set({ name: `~${z.id}` }).where(eq(deliveryZones.id, z.id));
+      }
+      for (const [i, z] of zonesIn.entries()) {
+        const row = { name: z.name, feeCents: z.feeCents, minOrderCents: z.minOrderCents, active: z.active, sortOrder: i, updatedAt: new Date() };
+        if (z.id && known.has(z.id)) await tx.update(deliveryZones).set(row).where(eq(deliveryZones.id, z.id));
+        else await tx.insert(deliveryZones).values({ tenantId: ctx.tenantId, ...row });
+      }
+    }
     await tx.insert(auditLog).values({
       tenantId: ctx.tenantId,
       userId: ctx.userId,
       action: "order.settings",
       entity: "restaurant_settings",
       entityId: ctx.tenantId,
-      diff: { acceptingOrders: values.acceptingOrders, prepMinutes: prep, minOrderCents: values.minOrderCents, paymentMethods: methods },
+      diff: { acceptingOrders: values.acceptingOrders, prepMinutes: prep, minOrderCents: values.minOrderCents, paymentMethods: methods, deliveryEnabled, zones: zonesIn?.length ?? undefined },
     });
-    return { ok: true as const, settings: await loadRestaurantSettings(tx) };
+    return { ok: true as const, settings: await loadRestaurantSettings(tx), zones: await loadDeliveryZones(tx) };
   });
 }

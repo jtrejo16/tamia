@@ -89,3 +89,18 @@ describe("aviso de pedido nuevo al equipo", () => {
     expect((await other.row()).notifiedAt).toBeNull();
   });
 });
+
+describe("aviso de pedido a domicilio", () => {
+  it("el correo dice A DOMICILIO con la direccion, la zona, el envio y el total", async () => {
+    const t = await setup();
+    await dbs.owner.db.update(orders).set({ mode: "delivery", deliveryAddress: "Calle 60 #123, casa azul", deliveryZoneName: "Centro", deliveryFeeCents: 3000, totalCents: 8700 }).where(eq(orders.id, t.o.id));
+    expect(await createOrderNotifier(t.deps)(t.job)).toEqual({ status: "sent", email: 1 });
+    const [, mail] = t.sendEmail.mock.calls[0] as unknown as [unknown, { subject: string; text: string }];
+    expect(mail.subject).toBe("Pedido #7 · Laura · $87 MXN");
+    expect(mail.text).toContain("A DOMICILIO");
+    expect(mail.text).toContain("Entregar en: Calle 60 #123, casa azul, col. Centro");
+    expect(mail.text).toContain("Envío: $30 MXN");
+    expect(mail.text).toContain("Total: $87 MXN");
+    expect(mail.text).not.toContain("Para recoger en el local");
+  });
+});

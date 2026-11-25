@@ -30,6 +30,7 @@ import {
 import { eq } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import { applyStarterMenu } from "./starter";
 import { isMercadoPagoError, type MercadoPagoClient } from "./mercadopago";
 import { can, fail, type Failure, type PanelContext, type Success } from "./types";
 
@@ -105,7 +106,11 @@ export async function signup(db: Database, raw: unknown): Promise<SignupResult> 
       fallbackModel: tier.fallback,
       trialDays: TRIAL_DAYS,
     });
-    if (res.ok) return { ok: true, tenantId: res.tenantId, userId: res.userId, sessionVersion: 0 };
+    if (res.ok) {
+      // Giros de restaurante: arranca con un menu de ejemplo. Si falla, el registro sigue (el menu se puede cargar a mano).
+      await applyStarterMenu(db, res.tenantId, input.vertical).catch((error) => console.error("[signup] menu de arranque:", error instanceof Error ? error.message : error));
+      return { ok: true, tenantId: res.tenantId, userId: res.userId, sessionVersion: 0 };
+    }
     if (res.error === "email_taken") return fail("email_taken");
   }
   throw new Error("No se pudo generar un identificador unico para el negocio");

@@ -10,6 +10,9 @@ export const VERTICALS = [
   { id: "mascotas", label: "Veterinaria o estética canina" },
   { id: "bienestar", label: "Gimnasio, yoga o entrenamiento" },
   { id: "automotriz", label: "Taller o servicio automotriz" },
+  { id: "taqueria", label: "Taquería" },
+  { id: "pizzeria", label: "Pizzería" },
+  { id: "restaurante", label: "Restaurante, fonda o cafetería" },
   { id: "profesional", label: "Despacho o servicios profesionales" },
   { id: "generico", label: "Otro tipo de negocio" },
 ] as const;

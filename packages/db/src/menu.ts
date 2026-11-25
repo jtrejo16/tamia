@@ -1,6 +1,6 @@
 import { asc } from "drizzle-orm";
 import type { Tx } from "./client";
-import { menuCategories, menuItemGroups, menuItems, menuModifierGroups, menuModifierOptions, restaurantSettings } from "./schema";
+import { deliveryZones, menuCategories, menuItemGroups, menuItems, menuModifierGroups, menuModifierOptions, restaurantSettings } from "./schema";
 
 /**
  * El menu de un negocio leido completo (modulo "restaurante"). Un menu cabe en memoria (decenas o pocos cientos de
@@ -98,6 +98,10 @@ export interface RestaurantSettingsRow {
   minOrderCents: number;
   paymentMethods: string[];
   transferInfo: string | null;
+  deliveryEnabled: boolean;
+  deliveryMinutes: number;
+  /** Envio gratis desde este subtotal (null = nunca). */
+  freeDeliveryFromCents: number | null;
 }
 
 export const DEFAULT_RESTAURANT_SETTINGS: RestaurantSettingsRow = {
@@ -106,10 +110,36 @@ export const DEFAULT_RESTAURANT_SETTINGS: RestaurantSettingsRow = {
   minOrderCents: 0,
   paymentMethods: ["efectivo", "tarjeta"],
   transferInfo: null,
+  deliveryEnabled: false,
+  deliveryMinutes: 40,
+  freeDeliveryFromCents: null,
 };
 
 export async function loadRestaurantSettings(tx: Tx): Promise<RestaurantSettingsRow> {
   const [row] = await tx.select().from(restaurantSettings).limit(1);
   if (!row) return { ...DEFAULT_RESTAURANT_SETTINGS };
-  return { acceptingOrders: row.acceptingOrders, prepMinutes: row.prepMinutes, minOrderCents: row.minOrderCents, paymentMethods: row.paymentMethods, transferInfo: row.transferInfo };
+  return {
+    acceptingOrders: row.acceptingOrders,
+    prepMinutes: row.prepMinutes,
+    minOrderCents: row.minOrderCents,
+    paymentMethods: row.paymentMethods,
+    transferInfo: row.transferInfo,
+    deliveryEnabled: row.deliveryEnabled,
+    deliveryMinutes: row.deliveryMinutes,
+    freeDeliveryFromCents: row.freeDeliveryFromCents,
+  };
+}
+
+export interface DeliveryZoneRow {
+  id: string;
+  name: string;
+  feeCents: number;
+  /** Pedido minimo propio de la zona (0 = vale el general). */
+  minOrderCents: number;
+  active: boolean;
+}
+
+export async function loadDeliveryZones(tx: Tx): Promise<DeliveryZoneRow[]> {
+  const rows = await tx.select().from(deliveryZones).orderBy(asc(deliveryZones.sortOrder), asc(deliveryZones.name));
+  return rows.map((z) => ({ id: z.id, name: z.name, feeCents: z.feeCents, minOrderCents: z.minOrderCents, active: z.active }));
 }

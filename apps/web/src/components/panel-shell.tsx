@@ -31,7 +31,7 @@ interface NavItem {
   href: string;
   label: string;
   icon: string;
-  badge: "attention" | "approvals" | "orders" | null;
+  badge: "attention" | "approvals" | "orders" | "setup" | null;
   /** Solo se muestra a los negocios que tienen este modulo. Sin valor: es del nucleo y siempre esta. */
   module?: string;
 }
@@ -46,6 +46,9 @@ const ITEMS: NavItem[] = [
   { href: "/probador", label: "Probador", icon: ICONS.flask, badge: null },
   { href: "/configuracion", label: "Ajustes", icon: ICONS.cog, badge: null },
 ];
+
+/** «Primeros pasos»: aparece primero mientras falten pasos (el resumen trae el porcentaje en `setup`). */
+const SETUP_ITEM: NavItem = { href: "/inicio", label: "Primeros pasos", icon: ICONS.check, badge: "setup" };
 
 /** Pantallas que aporta cada modulo (el de restaurante sumara Pedidos y Reservaciones). Van despues de «Aprobaciones». */
 const MODULE_NAV: Record<string, NavItem[]> = {
@@ -86,9 +89,11 @@ function TrialNote({ iso, owner }: { iso: string; owner: boolean }) {
 
 export function PanelShell({ info, children }: { info: PanelInfo; children: ReactNode }) {
   const pathname = usePathname();
-  const nav = useMemo(() => navFor(info.modules), [info.modules]);
+  const baseNav = useMemo(() => navFor(info.modules), [info.modules]);
   useLiveUpdates();
-  const { data: counts } = usePolling<{ ok: true; attention: number; approvals: number; orders?: number; worker: boolean; access?: { allowed: boolean; reason: string; trialEndsAt: string | null } }>("/api/summary", 6000);
+  const { data: counts } = usePolling<{ ok: true; attention: number; approvals: number; orders?: number; setup?: number; worker: boolean; access?: { allowed: boolean; reason: string; trialEndsAt: string | null } }>("/api/summary", 6000);
+  // «Primeros pasos» va primero mientras el avance no llegue a 100 %.
+  const nav = useMemo(() => (counts?.setup !== undefined && counts.setup < 100 ? [SETUP_ITEM, ...baseNav] : baseNav), [baseNav, counts?.setup]);
   // La del servidor al cargar la pagina; la del resumen la mantiene al dia sin recargar (por ejemplo, al pagar).
   const access = counts?.access ?? info.access;
   const sendingDown = counts !== null && counts.worker === false;
@@ -98,8 +103,15 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
     window.location.href = "/login";
   }
 
-  const badge = (key: "attention" | "approvals" | "orders" | null) => {
+  const badge = (key: "attention" | "approvals" | "orders" | "setup" | null) => {
     const n = key && counts ? (counts[key] ?? 0) : 0;
+    if (key === "setup") {
+      return (
+        <span className="ml-auto rounded-full bg-teal-600 px-1.5 text-xs font-semibold text-white" aria-label={`${n} por ciento de avance`}>
+          {n}%
+        </span>
+      );
+    }
     return n > 0 ? (
       <span className="ml-auto rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-white" aria-label={`${n} pendientes`}>
         {n > 99 ? "99+" : n}
@@ -205,7 +217,9 @@ export function PanelShell({ info, children }: { info: PanelInfo; children: Reac
               <Link key={item.href} href={item.href} className={cx("relative flex min-w-[76px] flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium", active ? "text-teal-800" : "text-slate-500")}>
                 <Icon d={item.icon} />
                 {item.label}
-                {n > 0 && <span className="absolute right-[22%] top-1 rounded-full bg-amber-500 px-1.5 text-[10px] font-semibold text-white">{n}</span>}
+                {(n > 0 || item.badge === "setup") && (
+                  <span className={cx("absolute right-[22%] top-1 rounded-full px-1.5 text-[10px] font-semibold text-white", item.badge === "setup" ? "bg-teal-600" : "bg-amber-500")}>{item.badge === "setup" ? `${n}%` : n}</span>
+                )}
               </Link>
             );
           })}

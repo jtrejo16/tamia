@@ -74,9 +74,13 @@ export function createOrderNotifier(deps: OrderNotifyDeps) {
       .join("\n");
     const url = `${(deps.baseUrl ?? "https://www.jovia.mx").replace(/\/$/, "")}/pedidos`;
     const text =
-      `Nuevo pedido #${order.number} por ${CHANNEL_LABEL[order.channel] ?? order.channel} en ${loaded.tenantName}.\n\n` +
+      `Nuevo pedido${order.mode === "delivery" ? " A DOMICILIO" : ""} #${order.number} por ${CHANNEL_LABEL[order.channel] ?? order.channel} en ${loaded.tenantName}.\n\n` +
       `Cliente: ${order.customerName}${order.customerPhone ? ` (${order.customerPhone})` : ""}\n` +
-      `Para recoger en el local · pago en ${PAYMENT_LABEL[order.paymentMethod] ?? order.paymentMethod}\n\n${detail}\n\n` +
+      (order.mode === "delivery"
+        ? `Entregar en: ${order.deliveryAddress ?? ""}${order.deliveryZoneName ? `, col. ${order.deliveryZoneName}` : ""} · pago en ${PAYMENT_LABEL[order.paymentMethod] ?? order.paymentMethod} al recibir\n\n`
+        : `Para recoger en el local · pago en ${PAYMENT_LABEL[order.paymentMethod] ?? order.paymentMethod}\n\n`) +
+      `${detail}\n\n` +
+      (order.mode === "delivery" ? `Envío: ${order.deliveryFeeCents > 0 ? money(order.deliveryFeeCents) : "gratis"}\n` : "") +
       `Total: ${money(order.totalCents)}${order.notes ? `\nNota: ${order.notes}` : ""}\n\nAbre el tablero: ${url}\n\n— Jovia`;
 
     let sent = 0;

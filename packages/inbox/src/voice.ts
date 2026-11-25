@@ -27,6 +27,8 @@ const scope = (ctx: PanelContext) => ({ tenantId: ctx.tenantId, userId: ctx.user
 export interface VoiceSettingsView {
   enabled: boolean;
   allowBooking: boolean;
+  /** Restaurante: el asistente toma pedidos por telefono (si no, solo informa el menu). */
+  allowOrders: boolean;
   greeting: string;
   voiceId: string;
   phoneNumber: string;
@@ -42,6 +44,7 @@ const E164 = /^\+\d{8,15}$/;
 const settingsSchema = z.object({
   enabled: z.boolean(),
   allowBooking: z.boolean(),
+  allowOrders: z.boolean().default(false),
   greeting: z.string().trim().max(300).default(""),
   voiceId: z.string().trim().max(120).regex(/^[\w.-]*$/, "El identificador de la voz solo lleva letras, números, guion y punto").default(""),
   phoneNumber: z.string().trim().refine((v) => v === "" || E164.test(v), "El número va con lada internacional, por ejemplo +529981234567").default(""),
@@ -53,6 +56,7 @@ export async function getVoiceSettings(db: Database, ctx: PanelContext, retellCo
   return {
     enabled: row?.enabled ?? false,
     allowBooking: row?.allowBooking ?? false,
+    allowOrders: row?.allowOrders ?? false,
     greeting: row?.greeting ?? "",
     voiceId: row?.voiceId ?? "",
     phoneNumber: row?.phoneNumber ?? "",
@@ -77,6 +81,7 @@ export async function saveVoiceSettings(
     const values = {
       enabled: v.enabled,
       allowBooking: v.allowBooking,
+      allowOrders: v.allowOrders,
       greeting: v.greeting || null,
       voiceId: v.voiceId || null,
       phoneNumber: v.phoneNumber || null,
@@ -91,7 +96,7 @@ export async function saveVoiceSettings(
       userId: ctx.userId,
       action: "voice.settings",
       entity: "voice_settings",
-      diff: { enabled: v.enabled, allowBooking: v.allowBooking } as never,
+      diff: { enabled: v.enabled, allowBooking: v.allowBooking, allowOrders: v.allowOrders } as never,
     });
   });
   return { ok: true };
@@ -130,7 +135,7 @@ export async function syncVoiceAgent(
   const transferTo = transfer
     ? transferDestination(settings.transferNumber!, settings.phoneNumber ? await retell.getTerminationUri(settings.phoneNumber) : null)
     : "";
-  const wanted = new Set(voiceToolNames(settings.allowBooking, transfer));
+  const wanted = new Set(voiceToolNames(settings.allowBooking, transfer, settings.allowOrders));
   const tools: RetellTool[] = [
     ...(transfer
       ? [
@@ -175,7 +180,7 @@ export async function syncVoiceAgent(
       : []),
   ];
   const llm = {
-    general_prompt: buildVoicePrompt({ tenant, config, allowBooking: settings.allowBooking, transfer }),
+    general_prompt: buildVoicePrompt({ tenant, config, allowBooking: settings.allowBooking, transfer, allowOrders: settings.allowOrders }),
     begin_message: settings.greeting || DEFAULT_GREETING(tenant.name, config.assistantName),
     general_tools: tools,
     // Modelo economico (la voz es lo mas caro): ver voiceCostSettings en retell.ts.
@@ -412,7 +417,7 @@ export async function runVoiceTool(
   }
   const [settings] = await withTenant(db, { tenantId }, (tx) => tx.select().from(voiceSettings));
   if (!settings?.enabled) return { error: "voz_desactivada" };
-  if (!voiceToolNames(settings.allowBooking, Boolean(settings.transferNumber)).includes(req.name)) {
+  if (!voiceToolNames(settings.allowBooking, Boolean(settings.transferNumber), settings.allowOrders).includes(req.name)) {
     return { error: "herramienta_no_permitida", instruccion: "Esa acción no está disponible por teléfono. Pasa a una persona con escalar_a_humano." };
   }
 
