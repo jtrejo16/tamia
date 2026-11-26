@@ -13,10 +13,19 @@ export const SEGMENTS: Record<CustomerSegment, { text: string; tone: Tone; hint:
   perdido: { text: "Perdido", tone: "rose", hint: "Más de 120 días sin venir y sin cita próxima." },
 };
 
-export function SegmentBadge({ segment }: { segment: CustomerSegment }) {
+/** Los mismos segmentos explicados para un restaurante (pedidos y reservaciones, plazos de 30 y 60 dias). */
+const RESTAURANT_HINTS: Record<CustomerSegment, string> = {
+  prospecto: "Escribió o llamó, pero nunca ha pedido ni reservado.",
+  nuevo: "Tiene un pedido o una reservación en curso, o un solo pedido o visita.",
+  recurrente: "Ya pidió o vino 2 o más veces.",
+  en_riesgo: "Más de 30 días sin pedir ni venir, y nada en curso.",
+  perdido: "Más de 60 días sin pedir ni venir, y nada en curso.",
+};
+
+export function SegmentBadge({ segment, restaurant = false }: { segment: CustomerSegment; restaurant?: boolean }) {
   const s = SEGMENTS[segment];
   return (
-    <span title={s.hint}>
+    <span title={restaurant ? RESTAURANT_HINTS[segment] : s.hint}>
       <Badge tone={s.tone}>{s.text}</Badge>
     </span>
   );
@@ -63,4 +72,21 @@ export const APPOINTMENT_STATUS: Record<string, { text: string; tone: Tone }> = 
   done: { text: "Vino", tone: "sky" },
   no_show: { text: "No vino", tone: "rose" },
   cancelled: { text: "Cancelada", tone: "slate" },
+};
+
+export const ORDER_STATUS: Record<string, { text: string; tone: Tone }> = {
+  new: { text: "Nuevo", tone: "amber" },
+  preparing: { text: "Preparando", tone: "sky" },
+  ready: { text: "Listo", tone: "green" },
+  on_the_way: { text: "En camino", tone: "sky" },
+  delivered: { text: "Entregado", tone: "green" },
+  cancelled: { text: "Cancelado", tone: "slate" },
+};
+
+export const RESERVATION_STATUS: Record<string, { text: string; tone: Tone }> = {
+  confirmed: { text: "Confirmada", tone: "amber" },
+  seated: { text: "Sentada", tone: "sky" },
+  completed: { text: "Completada", tone: "green" },
+  cancelled: { text: "Cancelada", tone: "slate" },
+  no_show: { text: "No llegó", tone: "rose" },
 };

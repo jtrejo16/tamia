@@ -218,6 +218,13 @@
       "when": 1795644887380,
       "tag": "0030_restaurant_reservations",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1795650660229,
+      "tag": "0031_business_hours_overnight",
+      "breakpoints": true
     }
   ]
 }

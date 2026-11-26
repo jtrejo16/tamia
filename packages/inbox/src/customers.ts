@@ -1,5 +1,6 @@
 import { phoneVariants, type MatchReason } from "@empleado/agent";
-import { appointments, auditLog, channels, contacts, conversations, services, staff, withTenant, type Database, type Tx } from "@empleado/db";
+import { appointments, auditLog, channels, contacts, conversations, orderItems, orders, reservations, services, staff, tenants, withTenant, type Database, type OrderStatus, type ReservationStatus, type Tx } from "@empleado/db";
+import { hasModule, modulesFor } from "@empleado/shared";
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { listAppointments, type AppointmentView } from "./appointments";
 import { contactRelations } from "./contact-link";
@@ -12,11 +13,27 @@ import { can, fail, type Failure, type PanelContext, type Success } from "./type
  *
  * Las estadisticas se calculan al consultar (sin tablas aparte). "Vino" = cita en estado "done"; si el equipo
  * no cierra las citas, estas cifras salen bajas: de ahi la cola de citas por cerrar.
+ *
+ * Restaurantes: una "visita" es un pedido ENTREGADO o una reservacion COMPLETADA, y una inasistencia es una reservacion en
+ * "no llego". Cada fuente que el negocio no usa aporta cero, asi que las mismas cifras sirven para citas, restaurantes o ambos.
  */
 
 /** Dias sin venir para considerar a un cliente "en riesgo" y "perdido". */
 export const RISK_DAYS = 60;
 export const LOST_DAYS = 120;
+/** Un restaurante se enfria antes que una clinica: 30 y 60 dias. */
+export const RESTAURANT_RISK_DAYS = 30;
+export const RESTAURANT_LOST_DAYS = 60;
+
+export interface SegmentLimits {
+  risk: number;
+  lost: number;
+}
+const APPOINTMENT_LIMITS: SegmentLimits = { risk: RISK_DAYS, lost: LOST_DAYS };
+const RESTAURANT_LIMITS: SegmentLimits = { risk: RESTAURANT_RISK_DAYS, lost: RESTAURANT_LOST_DAYS };
+
+/** Los restaurantes (sin agenda de citas) usan plazos mas cortos. */
+export const limitsFor = (modules: readonly string[]): SegmentLimits => (hasModule(modules, "restaurante") && !hasModule(modules, "citas") ? RESTAURANT_LIMITS : APPOINTMENT_LIMITS);
 const DAY_MS = 86_400_000;
 
 export type CustomerSegment = "prospecto" | "nuevo" | "recurrente" | "en_riesgo" | "perdido";
@@ -31,12 +48,12 @@ export interface SegmentFacts {
 }
 
 /** Etapa del cliente. Quien tiene cita proxima nunca es "en riesgo" ni "perdido". */
-export function segmentOf(f: SegmentFacts, now: Date): CustomerSegment {
+export function segmentOf(f: SegmentFacts, now: Date, limits: SegmentLimits = APPOINTMENT_LIMITS): CustomerSegment {
   if (f.visits === 0) return f.upcoming > 0 || f.unclosed > 0 ? "nuevo" : "prospecto";
   if (f.upcoming === 0 && f.lastVisit) {
     const days = (now.getTime() - f.lastVisit.getTime()) / DAY_MS;
-    if (days > LOST_DAYS) return "perdido";
-    if (days > RISK_DAYS) return "en_riesgo";
+    if (days > limits.lost) return "perdido";
+    if (days > limits.risk) return "en_riesgo";
   }
   return f.visits >= 2 ? "recurrente" : "nuevo";
 }
@@ -52,12 +69,18 @@ export interface CustomerRow {
   segment: CustomerSegment;
   /** Dos o mas inasistencias. */
   frequentNoShow: boolean;
+  /** Citas realizadas + pedidos entregados + reservaciones completadas. */
   visits: number;
   noShows: number;
   cancelled: number;
   unclosed: number;
   lastVisitAt: Date | null;
+  /** Proxima cita o reservacion. */
   nextAppointmentAt: Date | null;
+  /** Restaurante: pedidos entregados, reservaciones completadas y lo gastado en pedidos entregados (centavos). */
+  orders: number;
+  reservations: number;
+  spendCents: number;
   optedOut: boolean;
   createdAt: Date;
 }
@@ -109,6 +132,8 @@ export async function listCustomers(
   const q = (options.q ?? "").trim().slice(0, 80);
 
   return withTenant(db, { tenantId: ctx.tenantId, userId: ctx.userId }, async (tx) => {
+    const [tenant] = await tx.select({ vertical: tenants.vertical, profile: tenants.profile }).from(tenants).where(eq(tenants.id, ctx.tenantId));
+    const limits = limitsFor(modulesFor(tenant?.vertical, tenant?.profile?.modules));
     const like = `%${likeEscape(q)}%`;
     const digits = q.replace(/\D/g, "");
     const search = q
@@ -126,7 +151,19 @@ export async function listCustomers(
         count(a.id) filter (where a.status in ('pending', 'confirmed') and a.ends_at < ${nowIso}::timestamptz)::int as unclosed,
         count(a.id) filter (where a.status in ('pending', 'confirmed') and a.ends_at >= ${nowIso}::timestamptz)::int as upcoming,
         max(a.starts_at) filter (where a.status = 'done') as last_visit,
-        min(a.starts_at) filter (where a.status in ('pending', 'confirmed') and a.ends_at >= ${nowIso}::timestamptz) as next_appt
+        min(a.starts_at) filter (where a.status in ('pending', 'confirmed') and a.ends_at >= ${nowIso}::timestamptz) as next_appt,
+        (select count(*) from orders o where o.contact_id = c.id and o.status = 'delivered')::int as orders_done,
+        coalesce((select sum(o.total_cents) from orders o where o.contact_id = c.id and o.status = 'delivered'), 0)::bigint as orders_spend,
+        (select count(*) from orders o where o.contact_id = c.id and o.status = 'cancelled')::int as orders_cancelled,
+        (select count(*) from orders o where o.contact_id = c.id and o.status in ('new', 'preparing', 'ready', 'on_the_way') and o.created_at >= ${nowIso}::timestamptz - interval '1 day')::int as orders_open,
+        (select max(coalesce(o.delivered_at, o.created_at)) from orders o where o.contact_id = c.id and o.status = 'delivered') as last_order,
+        (select count(*) from reservations r where r.contact_id = c.id and r.status = 'completed')::int as res_done,
+        (select count(*) from reservations r where r.contact_id = c.id and r.status = 'no_show')::int as res_no_show,
+        (select count(*) from reservations r where r.contact_id = c.id and r.status = 'cancelled')::int as res_cancelled,
+        (select count(*) from reservations r where r.contact_id = c.id and r.status in ('confirmed', 'seated') and r.ends_at < ${nowIso}::timestamptz)::int as res_unclosed,
+        (select count(*) from reservations r where r.contact_id = c.id and r.status in ('confirmed', 'seated') and r.ends_at >= ${nowIso}::timestamptz)::int as res_upcoming,
+        (select max(r.starts_at) from reservations r where r.contact_id = c.id and r.status = 'completed') as last_res,
+        (select min(r.starts_at) from reservations r where r.contact_id = c.id and r.status in ('confirmed', 'seated') and r.ends_at >= ${nowIso}::timestamptz) as next_res
       from contacts c
       left join appointments a on a.contact_id = c.id and a.tenant_id = c.tenant_id
       where c.tenant_id = ${ctx.tenantId}
@@ -149,9 +186,15 @@ export async function listCustomers(
     for (const r of chRows) (chBy.get(r.contactId) ?? chBy.set(r.contactId, new Set()).get(r.contactId)!).add(r.type);
 
     const all: CustomerRow[] = raw.map((r) => {
-      const visits = num(r.visits);
-      const noShows = num(r.no_shows);
-      const lastVisit = when(r.last_visit);
+      const ordersDone = num(r.orders_done);
+      const resDone = num(r.res_done);
+      const visits = num(r.visits) + ordersDone + resDone;
+      const noShows = num(r.no_shows) + num(r.res_no_show);
+      const unclosed = num(r.unclosed) + num(r.res_unclosed);
+      const upcoming = num(r.upcoming) + num(r.res_upcoming) + num(r.orders_open);
+      const latest = (...ds: Array<Date | null>) => ds.reduce<Date | null>((m, d) => (d && (!m || d > m) ? d : m), null);
+      const earliest = (...ds: Array<Date | null>) => ds.reduce<Date | null>((m, d) => (d && (!m || d < m) ? d : m), null);
+      const lastVisit = latest(when(r.last_visit), when(r.last_order), when(r.last_res));
       const nick = nickOf(r.profile);
       const name = txt(r.display_name);
       return {
@@ -162,14 +205,17 @@ export async function listCustomers(
         email: txt(r.email),
         tags: (r.tags as string[] | null) ?? [],
         channels: [...(chBy.get(String(r.id)) ?? [])].sort(),
-        segment: segmentOf({ visits, upcoming: num(r.upcoming), unclosed: num(r.unclosed), lastVisit }, now),
+        segment: segmentOf({ visits, upcoming, unclosed, lastVisit }, now, limits),
         frequentNoShow: noShows >= 2,
         visits,
         noShows,
-        cancelled: num(r.cancelled),
-        unclosed: num(r.unclosed),
+        cancelled: num(r.cancelled) + num(r.orders_cancelled) + num(r.res_cancelled),
+        unclosed,
         lastVisitAt: lastVisit,
-        nextAppointmentAt: when(r.next_appt),
+        nextAppointmentAt: earliest(when(r.next_appt), when(r.next_res)),
+        orders: ordersDone,
+        reservations: resDone,
+        spendCents: num(r.orders_spend),
         optedOut: Boolean(r.opted_out_at),
         createdAt: new Date(String(r.created_at)),
       };
@@ -212,9 +258,34 @@ export interface CustomerAppointment {
   priceCents: number | null;
 }
 
+/** Un pedido del cliente (restaurante). `items` ya viene armado: "3 × Taco al pastor, 1 × Horchata". */
+export interface CustomerOrder {
+  id: string;
+  number: number;
+  createdAt: Date;
+  status: OrderStatus;
+  mode: "pickup" | "delivery";
+  channel: string;
+  totalCents: number;
+  items: string;
+}
+
+/** Una reservacion del cliente (restaurante). */
+export interface CustomerReservation {
+  id: string;
+  number: number;
+  startsAt: Date;
+  status: ReservationStatus;
+  partySize: number;
+  notes: string | null;
+  /** Ya paso su hora y sigue confirmada o sentada: falta cerrarla (llego / no llego). */
+  needsClosing: boolean;
+}
+
 export interface CustomerStats {
   firstVisitAt: Date | null;
   lastVisitAt: Date | null;
+  /** Citas realizadas + pedidos entregados + reservaciones completadas. */
   visits: number;
   noShows: number;
   cancelled: number;
@@ -227,8 +298,14 @@ export interface CustomerStats {
   /** Suma de precios de las citas realizadas, con el precio ACTUAL del servicio (estimado, no es un cobro real). */
   estimatedSpendCents: number;
   currency: string;
-  /** Ya volvio: tiene 2 o mas citas realizadas. */
+  /** Ya volvio: tiene 2 o mas visitas. */
   returned: boolean;
+  /** Restaurante: pedidos entregados, lo gastado en ellos (real, centavos), ticket promedio y platillo mas pedido. */
+  orders: number;
+  spendCents: number;
+  avgTicketCents: number | null;
+  topDish: { name: string; count: number } | null;
+  reservationsDone: number;
 }
 
 export interface CustomerDetail {
@@ -248,6 +325,9 @@ export interface CustomerDetail {
   /** Conversaciones (sin las del probador), la mas reciente primero. */
   conversations: Array<{ id: string; channel: string; lastMessageAt: Date | null }>;
   appointments: CustomerAppointment[];
+  /** Los 50 pedidos y las 50 reservaciones mas recientes (las estadisticas cuentan todos). */
+  orders: CustomerOrder[];
+  reservations: CustomerReservation[];
   stats: CustomerStats;
   /** Posibles duplicados (mismo nombre o telefono por otra red), para unirlos desde la bandeja. */
   possibleSame: Array<{ contactId: string; name: string; phone: string | null; reason: MatchReason }>;
@@ -265,7 +345,9 @@ export async function getCustomer(
     const [c] = await tx.select().from(contacts).where(eq(contacts.id, contactId));
     if (!c) return fail("not_found" as const);
 
-    const [convs, appts] = await Promise.all([
+    const [tenant] = await tx.select({ vertical: tenants.vertical, profile: tenants.profile }).from(tenants).where(eq(tenants.id, ctx.tenantId));
+    const limits = limitsFor(modulesFor(tenant?.vertical, tenant?.profile?.modules));
+    const [convs, appts, ords, ress] = await Promise.all([
       tx
         .select({ id: conversations.id, channel: channels.type, lastMessageAt: conversations.lastMessageAt })
         .from(conversations)
@@ -279,7 +361,30 @@ export async function getCustomer(
         .innerJoin(staff, eq(staff.id, appointments.staffId))
         .where(eq(appointments.contactId, c.id))
         .orderBy(desc(appointments.startsAt)),
+      tx.select().from(orders).where(eq(orders.contactId, c.id)).orderBy(desc(orders.createdAt)),
+      tx.select().from(reservations).where(eq(reservations.contactId, c.id)).orderBy(desc(reservations.startsAt)),
     ]);
+
+    // Lo que pidio en cada pedido (de todos los entregados para el platillo favorito; de los 50 mas recientes para mostrar).
+    const needItems = [...new Set([...ords.slice(0, 50), ...ords.filter((o) => o.status === "delivered")].map((o) => o.id))];
+    const lines = needItems.length ? await tx.select().from(orderItems).where(inArray(orderItems.orderId, needItems)).orderBy(orderItems.sortOrder) : [];
+    const itemsText = (orderId: string) => lines.filter((l) => l.orderId === orderId).map((l) => `${l.quantity} × ${l.name}`).join(", ");
+    const dishes = new Map<string, number>();
+    for (const o of ords.filter((x) => x.status === "delivered")) for (const l of lines.filter((x) => x.orderId === o.id)) dishes.set(l.name, (dishes.get(l.name) ?? 0) + l.quantity);
+    const topDish = [...dishes].sort((x, y) => y[1] - x[1])[0];
+
+    const openOrderStates: OrderStatus[] = ["new", "preparing", "ready", "on_the_way"];
+    const resHistory: CustomerReservation[] = ress.map((r) => ({
+      id: r.id,
+      number: r.number,
+      startsAt: r.startsAt,
+      status: r.status,
+      partySize: r.partySize,
+      notes: r.notes,
+      needsClosing: (r.status === "confirmed" || r.status === "seated") && r.endsAt.getTime() < now.getTime(),
+    }));
+    const deliveredOrders = ords.filter((o) => o.status === "delivered");
+    const openOrders = ords.filter((o) => openOrderStates.includes(o.status) && now.getTime() - o.createdAt.getTime() <= DAY_MS).length;
 
     const history: CustomerAppointment[] = appts.map(({ a, service, price, staff: member }) => ({
       id: a.id,
@@ -293,21 +398,29 @@ export async function getCustomer(
     }));
 
     const done = appts.filter((r) => r.a.status === "done").sort((x, y) => x.a.startsAt.getTime() - y.a.startsAt.getTime());
-    const upcoming = history.filter((h) => (h.status === "pending" || h.status === "confirmed") && !h.needsClosing).length;
-    const unclosed = history.filter((h) => h.needsClosing).length;
-    const lastVisit = done.at(-1)?.a.startsAt ?? null;
+    const upcoming = history.filter((h) => (h.status === "pending" || h.status === "confirmed") && !h.needsClosing).length + resHistory.filter((r) => (r.status === "confirmed" || r.status === "seated") && !r.needsClosing).length + openOrders;
+    const unclosed = history.filter((h) => h.needsClosing).length + resHistory.filter((r) => r.needsClosing).length;
+
+    // Una visita es una cita realizada, un pedido entregado o una reservacion completada.
+    const visitDates = [
+      ...done.map((r) => r.a.startsAt),
+      ...deliveredOrders.map((o) => o.deliveredAt ?? o.createdAt),
+      ...ress.filter((r) => r.status === "completed").map((r) => r.startsAt),
+    ].sort((x, y) => x.getTime() - y.getTime());
+    const lastVisit = visitDates.at(-1) ?? null;
 
     let avg: number | null = null;
-    if (done.length >= 2) {
-      const span = done.at(-1)!.a.startsAt.getTime() - done[0]!.a.startsAt.getTime();
-      avg = Math.round(span / (done.length - 1) / DAY_MS);
+    if (visitDates.length >= 2) {
+      const span = visitDates.at(-1)!.getTime() - visitDates[0]!.getTime();
+      avg = Math.round(span / (visitDates.length - 1) / DAY_MS);
     }
     const byService = new Map<string, number>();
     for (const r of done) byService.set(r.service, (byService.get(r.service) ?? 0) + 1);
     const top = [...byService].sort((x, y) => y[1] - x[1])[0];
 
-    const visits = done.length;
-    const noShows = history.filter((h) => h.status === "no_show").length;
+    const visits = visitDates.length;
+    const noShows = history.filter((h) => h.status === "no_show").length + resHistory.filter((r) => r.status === "no_show").length;
+    const ordersSpend = deliveredOrders.reduce((sum, o) => sum + o.totalCents, 0);
     const profile = (c.profile ?? {}) as Record<string, unknown>;
     const rel = await contactRelations(tx, c.id, now);
 
@@ -322,17 +435,19 @@ export async function getCustomer(
       notes: c.notes ?? "",
       optedOut: Boolean(c.optedOutAt),
       createdAt: c.createdAt,
-      segment: segmentOf({ visits, upcoming, unclosed, lastVisit }, now),
+      segment: segmentOf({ visits, upcoming, unclosed, lastVisit }, now, limits),
       frequentNoShow: noShows >= 2,
       channels: [...new Set(convs.map((v) => v.channel))].sort(),
       conversations: convs,
       appointments: history,
+      orders: ords.slice(0, 50).map((o) => ({ id: o.id, number: o.number, createdAt: o.createdAt, status: o.status, mode: o.mode, channel: o.channel, totalCents: o.totalCents, items: itemsText(o.id) })),
+      reservations: resHistory.slice(0, 50),
       stats: {
-        firstVisitAt: done[0]?.a.startsAt ?? null,
+        firstVisitAt: visitDates[0] ?? null,
         lastVisitAt: lastVisit,
         visits,
         noShows,
-        cancelled: history.filter((h) => h.status === "cancelled").length,
+        cancelled: history.filter((h) => h.status === "cancelled").length + ords.filter((o) => o.status === "cancelled").length + resHistory.filter((r) => r.status === "cancelled").length,
         upcoming,
         unclosed,
         avgDaysBetweenVisits: avg,
@@ -341,6 +456,11 @@ export async function getCustomer(
         estimatedSpendCents: done.reduce((s, r) => s + (r.price ?? 0), 0),
         currency: done[0]?.currency ?? appts[0]?.currency ?? "MXN",
         returned: visits >= 2,
+        orders: deliveredOrders.length,
+        spendCents: ordersSpend,
+        avgTicketCents: deliveredOrders.length > 0 ? Math.round(ordersSpend / deliveredOrders.length) : null,
+        topDish: topDish ? { name: topDish[0], count: topDish[1] } : null,
+        reservationsDone: ress.filter((r) => r.status === "completed").length,
       },
       possibleSame: rel.possibleSame.map((p) => ({ contactId: p.contactId, name: p.name, phone: p.phone, reason: p.reason })),
       otherPhones: Array.isArray(profile.otros_telefonos) ? (profile.otros_telefonos as string[]).filter((p) => typeof p === "string") : [],

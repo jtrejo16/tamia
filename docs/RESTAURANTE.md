@@ -85,6 +85,14 @@ El asistente telefónico (ver `docs/VOICE.md`) usa **las mismas herramientas y r
 - **Operador → «Preparar demostración»** (`operatorPrepareDemo`, `packages/inbox/src/demo.ts`, solo operador y solo negocios con el módulo de restaurante): llena **solo lo que falta** y es idempotente. Carga el menú de ejemplo si el menú está vacío, un horario de todos los días de 13:00 a 23:00 si no hay horario general, tres zonas de entrega si no hay ninguna (Centro $30; Norte y Sur $45 con pedido mínimo de $150) y, si el negocio nunca guardó ajustes de pedidos, enciende domicilio (envío gratis desde $300) y reservaciones (aforo 30). Nunca pisa lo que el negocio ya configuró y deja constancia en la bitácora.
 - **`docs/DEMO-RESTAURANTES.md`:** preparación del negocio de demo, guion de 10 minutos con los mensajes de ejemplo y qué enseñar en el panel, qué hacer si algo falla, preguntas de prospectos y **lo que no se promete**.
 
+## Clientes de un restaurante
+
+La sección **Clientes** deja de hablar de citas: la lista muestra pedidos, reservaciones y lo gastado, y la ficha trae el **historial de pedidos y de reservaciones**, el ticket promedio y el platillo favorito. Los plazos de «en riesgo» y «perdido» son de 30 y 60 días. Detalle en `docs/CLIENTES.md`.
+
+## Horario que cruza la medianoche
+
+Una taquería que cierra a las 2 de la mañana captura su horario tal cual: **de 18:00 a 02:00** (la hora de cierre menor que la de apertura significa «del día siguiente»; cerrar a las 00:00 es medianoche). Los pedidos y las reservaciones lo entienden (la madrugada cuenta para el turno del día anterior y un día de cierre quita también su madrugada). **Solo se acepta en negocios sin el módulo de citas**: la agenda de citas no entiende turnos que cruzan la medianoche, así que un negocio de citas recibe un aviso claro. En Ajustes → Horarios un restaurante ve «Horario de atención» (no «de citas»). La base exige solo que abrir y cerrar no sean la misma hora (migración `0031`).
+
 ## Reservaciones por aforo (fase 6)
 
 El restaurante dice **cuántos comensales caben a la vez** (aforo) y cada reservación ocupa los lugares de su grupo durante la estancia estimada. **No hay mesas**: se reserva mientras el grupo quepa en el aforo durante TODO el rato que ocuparía. Se enciende en *Reservaciones → Ajustes* (apagado por defecto); el código del cálculo está en `packages/agent/src/reservations.ts`.

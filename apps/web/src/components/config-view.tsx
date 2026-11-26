@@ -34,7 +34,7 @@ const TABS: Array<{ id: Tab; label: string; ownerOnly?: boolean }> = [
 ];
 
 /** Pestañas del modulo de citas: un negocio sin ese modulo (por ejemplo un restaurante) no las ve. */
-const CITAS_TABS = new Set<Tab>(["servicios", "equipo"]);
+const CITAS_TABS = new Set<Tab>(["servicios", "equipo", "calendario", "resenas"]);
 
 const field =
   "w-full rounded-lg bg-white px-3 py-2 text-sm text-slate-900 ring-1 ring-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:bg-slate-50 disabled:text-slate-500";
@@ -623,6 +623,8 @@ function WindowsEditor({ windows, onChange, disabled }: { windows: Window[]; onC
 }
 
 function HoursTab({ config, editable, reload }: TabProps) {
+  const panel = usePanel();
+  const citas = panel.modules.includes("citas");
   const saver = useSaver(reload);
   const [scope, setScope] = useState<string>("business");
   const staffId = scope === "business" ? null : scope;
@@ -640,13 +642,22 @@ function HoursTab({ config, editable, reload }: TabProps) {
 
   return (
     <div className="space-y-4">
-      <Card title="Horario de citas" hint="Cuándo se pueden agendar citas. El asistente solo ofrece horarios dentro de este horario.">
-        <Field label="¿De quién?">
-          <select className={field} value={scope} onChange={(e) => setScope(e.target.value)}>
-            <option value="business">Horario general del negocio</option>
-            {config.staff.map((m) => <option key={m.id} value={m.id}>{m.name} {m.ownHours ? "(horario propio)" : ""}</option>)}
-          </select>
-        </Field>
+      <Card
+        title={citas ? "Horario de citas" : "Horario de apertura"}
+        hint={
+          citas
+            ? "Cuándo se pueden agendar citas. El asistente solo ofrece horarios dentro de este horario."
+            : "Los días y horas en que abre el restaurante. El asistente solo toma pedidos y reservaciones dentro de este horario y lo usa para contestar «¿hasta qué hora abren?». Si cierras después de la medianoche, pon la hora del día siguiente: de 18:00 a 02:00 es un turno que termina a las 2 de la mañana."
+        }
+      >
+        {citas && (
+          <Field label="¿De quién?">
+            <select className={field} value={scope} onChange={(e) => setScope(e.target.value)}>
+              <option value="business">Horario general del negocio</option>
+              {config.staff.map((m) => <option key={m.id} value={m.id}>{m.name} {m.ownHours ? "(horario propio)" : ""}</option>)}
+            </select>
+          </Field>
+        )}
         {member && !member.ownHours && windows.length === 0 && (
           <Alert tone="sky">{member.name} sigue el horario general del negocio. Si defines horas aquí, solo trabajará en ellas (siempre dentro del horario del negocio).</Alert>
         )}
@@ -664,7 +675,7 @@ function HoursTab({ config, editable, reload }: TabProps) {
         )}
       </Card>
 
-      <Card title="Días libres y festivos" hint="No se ofrecen citas esos días.">
+      <Card title={citas ? "Días libres y festivos" : "Días de cierre"} hint={citas ? "No se ofrecen citas esos días." : "Días en que el restaurante no abre (festivos, vacaciones): esos días no se toman pedidos ni reservaciones."}>
         <ul className="divide-y divide-slate-100">
           {config.holidays.length === 0 && <li className="py-2 text-sm text-slate-500">No hay días libres próximos.</li>}
           {config.holidays.map((h) => (
@@ -675,13 +686,15 @@ function HoursTab({ config, editable, reload }: TabProps) {
           ))}
         </ul>
         {editable && (
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className={cx("grid gap-3", citas ? "sm:grid-cols-4" : "sm:grid-cols-3")}>
             <input type="date" className={field} value={holiday.date} onChange={(e) => setHoliday((p) => ({ ...p, date: e.target.value }))} />
             <input className={cx(field, "sm:col-span-1")} placeholder="Motivo (opcional)" value={holiday.reason} onChange={(e) => setHoliday((p) => ({ ...p, reason: e.target.value }))} />
-            <select className={field} value={holiday.scope} onChange={(e) => setHoliday((p) => ({ ...p, scope: e.target.value }))}>
-              <option value="business">Todo el negocio</option>
-              {config.staff.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
+            {citas && (
+              <select className={field} value={holiday.scope} onChange={(e) => setHoliday((p) => ({ ...p, scope: e.target.value }))}>
+                <option value="business">Todo el negocio</option>
+                {config.staff.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            )}
             <Button variant="secondary" loading={saver.busy === "holiday-add"} disabled={!holiday.date} onClick={async () => {
               const ok = await saver.run("holiday-add", "holiday-add", { date: holiday.date, reason: holiday.reason, staffId: holiday.scope === "business" ? null : holiday.scope }, "Día libre agregado ✓");
               if (ok) setHoliday({ date: "", reason: "", scope: "business" });

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { api, makeFormatters, usePolling } from "@/lib/client";
 import type { Serialized } from "@/lib/types";
-import { APPOINTMENT_STATUS, ChannelBadges, SegmentBadge, dateFormatter, money, prettyPhone } from "./customer-ui";
+import { APPOINTMENT_STATUS, ChannelBadges, ORDER_STATUS, RESERVATION_STATUS, SegmentBadge, dateFormatter, money, prettyPhone } from "./customer-ui";
 import { NewAppointmentDialog } from "./new-appointment-dialog";
 import { canAct, usePanel } from "./panel-context";
 import { Alert, Avatar, Badge, Button, Spinner, cx } from "./ui";
@@ -47,6 +47,10 @@ export function CustomerDetailView({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const c = res.data?.customer;
   const allowed = canAct(panel.role);
+  const hasCitas = panel.modules.includes("citas");
+  const hasRestaurant = panel.modules.includes("restaurante");
+  /** Restaurante sin agenda de citas: el resumen habla de pedidos y reservaciones. */
+  const restaurant = hasRestaurant && !hasCitas;
 
   async function mark(apptId: string, status: "done" | "no_show") {
     setBusy(apptId);
@@ -57,8 +61,17 @@ export function CustomerDetailView({ id }: { id: string }) {
     setBusy(null);
   }
 
+  async function markReservation(id: string, status: "completed" | "no_show") {
+    setBusy(id);
+    setError(null);
+    const r = await api<{ ok: true }>(`/api/reservations/${id}/status`, { method: "POST", body: { status } });
+    if (!r.ok) setError(r.message);
+    await res.reload();
+    setBusy(null);
+  }
+
   async function merge(keepId: string, mergeId: string, name: string) {
-    if (!window.confirm(`¿Unir a "${c?.name}" con "${name}"?\n\nSe juntan sus conversaciones, citas y llamadas en un solo cliente. No se puede deshacer.`)) return;
+    if (!window.confirm(`¿Unir a "${c?.name}" con "${name}"?\n\nSe juntan sus conversaciones, ${restaurant ? "pedidos, reservaciones" : "citas"} y llamadas en un solo cliente. No se puede deshacer.`)) return;
     setBusy(mergeId);
     setError(null);
     const r = await api<{ ok: true; keptId: string }>("/api/contacts/merge", { method: "POST", body: { keepId, mergeId } });
@@ -88,15 +101,20 @@ export function CustomerDetailView({ id }: { id: string }) {
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-xl font-semibold text-slate-900">{c.name}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              <SegmentBadge segment={c.segment} />
+              <SegmentBadge segment={c.segment} restaurant={restaurant} />
               <ChannelBadges channels={c.channels} />
-              {c.frequentNoShow && <Badge tone="rose">Falla seguido ({s.noShows})</Badge>}
+              {c.frequentNoShow && <Badge tone="rose">{restaurant ? "No llega seguido" : "Falla seguido"} ({s.noShows})</Badge>}
               {c.optedOut && <Badge tone="slate">No contactar</Badge>}
               <span className="text-xs text-slate-400">Cliente desde {date(c.createdAt)}</span>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {allowed && <Button onClick={() => setNewAppt(true)}>Agendar cita</Button>}
+            {allowed && hasCitas && <Button onClick={() => setNewAppt(true)}>Agendar cita</Button>}
+            {hasRestaurant && (
+              <Link href="/reservaciones" className="inline-flex items-center rounded-lg bg-white px-3.5 py-2 text-sm font-medium text-slate-800 ring-1 ring-slate-300 hover:bg-slate-50">
+                Reservaciones
+              </Link>
+            )}
             {c.conversations[0] && (
               <Link href={`/bandeja?c=${c.conversations[0].id}`} className="inline-flex items-center rounded-lg bg-white px-3.5 py-2 text-sm font-medium text-slate-800 ring-1 ring-slate-300 hover:bg-slate-50">
                 Abrir conversación
@@ -107,6 +125,28 @@ export function CustomerDetailView({ id }: { id: string }) {
         {newAppt && <NewAppointmentDialog contact={{ id: c.id, name: c.name }} onClose={() => setNewAppt(false)} onCreated={() => void res.reload()} />}
         {error && <Alert>{error}</Alert>}
 
+        {restaurant ? (
+          <Card title="Resumen" hint="Cuenta como visita cada pedido entregado y cada reservación completada.">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-4">
+              <Fact label="Pedidos" value={s.orders} hint="Pedidos entregados." />
+              <Fact label="Gastado" value={s.spendCents > 0 ? money(s.spendCents, s.currency) : "—"} hint="Suma de sus pedidos entregados." />
+              <Fact label="Ticket promedio" value={s.avgTicketCents !== null ? money(s.avgTicketCents, s.currency) : "—"} hint="Lo que gasta en promedio por pedido entregado." />
+              <Fact label="Reservaciones" value={s.reservationsDone} hint="Reservaciones completadas." />
+              <Fact label="¿Ha vuelto?" value={s.returned ? "Sí" : s.visits === 1 ? "Aún no" : "—"} hint="Ha vuelto cuando tiene 2 o más visitas (pedidos entregados o reservaciones completadas)." />
+              <Fact label="No llegó" value={s.noShows} hint="Reservaciones en las que no llegó." />
+              <Fact label="Canceló" value={s.cancelled} hint="Pedidos y reservaciones cancelados." />
+              <Fact label="En curso" value={s.upcoming > 0 ? `${s.upcoming}` : "Nada"} hint="Pedidos en curso y reservaciones próximas." />
+              <Fact label="Primera visita" value={date(s.firstVisitAt)} />
+              <Fact label="Última visita" value={s.lastVisitAt ? `${date(s.lastVisitAt)}` : "—"} hint={s.daysSinceLastVisit !== null ? `Hace ${s.daysSinceLastVisit} días` : undefined} />
+              <Fact label="Viene cada" value={s.avgDaysBetweenVisits !== null ? `~${s.avgDaysBetweenVisits} días` : "—"} hint="Promedio entre sus visitas. Necesita 2 o más." />
+              <Fact label="Platillo favorito" value={s.topDish ? `${s.topDish.name} (${s.topDish.count})` : "—"} hint="El que más ha pedido en pedidos entregados." />
+            </div>
+            {s.daysSinceLastVisit !== null && (c.segment === "en_riesgo" || c.segment === "perdido") && (
+              <Alert tone="amber">Hace {s.daysSinceLastVisit} días que no pide ni viene y no tiene nada en curso. Puede ser buen momento para escribirle.</Alert>
+            )}
+            {s.unclosed > 0 && <Alert tone="amber">Tiene {s.unclosed} {s.unclosed === 1 ? "reservación pasada" : "reservaciones pasadas"} sin cerrar: marca abajo si vino.</Alert>}
+          </Card>
+        ) : (
         <Card title="Resumen" hint="Cuenta como «vino» cada cita marcada como completada.">
           <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-4">
             <Fact label="Visitas" value={s.visits} />
@@ -125,6 +165,7 @@ export function CustomerDetailView({ id }: { id: string }) {
           )}
           {s.unclosed > 0 && <Alert tone="amber">Tiene {s.unclosed} {s.unclosed === 1 ? "cita pasada" : "citas pasadas"} sin cerrar: marca abajo si vino.</Alert>}
         </Card>
+        )}
 
         <div className="grid gap-4 lg:grid-cols-5">
           <div className="lg:col-span-2">
@@ -132,6 +173,67 @@ export function CustomerDetailView({ id }: { id: string }) {
           </div>
 
           <div className="space-y-4 lg:col-span-3">
+            {hasRestaurant && (
+              <Card title="Historial de pedidos" hint={c.orders.length === 0 ? undefined : `${s.orders} entregados · ${c.orders.length >= 50 ? "se muestran los 50 más recientes" : `${c.orders.length} en total`}`}>
+                {c.orders.length === 0 ? (
+                  <p className="text-sm text-slate-500">Todavía no ha hecho pedidos.</p>
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {c.orders.map((o) => {
+                      const st = ORDER_STATUS[o.status] ?? { text: o.status, tone: "slate" as const };
+                      return (
+                        <li key={o.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5">
+                          <div className="w-28 shrink-0">
+                            <p className="text-sm font-medium text-slate-900">{date(o.createdAt)}</p>
+                            <p className="text-xs tabular-nums text-slate-400">{fmt.time(o.createdAt)}</p>
+                          </div>
+                          <div className="min-w-0 flex-1 basis-40">
+                            <p className="truncate text-sm text-slate-800">#{o.number} · {o.items || "—"}</p>
+                            <p className="truncate text-xs text-slate-500">{o.mode === "delivery" ? "A domicilio" : "Para recoger"} · {money(o.totalCents, s.currency)}</p>
+                          </div>
+                          <Badge tone={st.tone}>{st.text}</Badge>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </Card>
+            )}
+
+            {hasRestaurant && (
+              <Card title="Historial de reservaciones" hint={c.reservations.length === 0 ? undefined : `${c.reservations.length >= 50 ? "se muestran las 50 más recientes" : `${c.reservations.length} en total`}`}>
+                {c.reservations.length === 0 ? (
+                  <p className="text-sm text-slate-500">Todavía no ha hecho reservaciones.</p>
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {c.reservations.map((r) => {
+                      const st = RESERVATION_STATUS[r.status] ?? { text: r.status, tone: "slate" as const };
+                      return (
+                        <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5">
+                          <div className="w-28 shrink-0">
+                            <p className="text-sm font-medium text-slate-900">{date(r.startsAt)}</p>
+                            <p className="text-xs tabular-nums text-slate-400">{fmt.time(r.startsAt)}</p>
+                          </div>
+                          <div className="min-w-0 flex-1 basis-32">
+                            <p className="truncate text-sm text-slate-800">#{r.number} · {r.partySize} {r.partySize === 1 ? "persona" : "personas"}</p>
+                            {r.notes && <p className="truncate text-xs text-slate-500">{r.notes}</p>}
+                          </div>
+                          <Badge tone={r.needsClosing ? "amber" : st.tone}>{r.needsClosing ? "Por cerrar" : st.text}</Badge>
+                          {r.needsClosing && allowed && (
+                            <div className="flex gap-1.5">
+                              <Button className="px-2.5 py-1 text-xs" onClick={() => markReservation(r.id, "completed")} loading={busy === r.id}>Vino</Button>
+                              {r.status === "confirmed" && <Button variant="secondary" className="px-2.5 py-1 text-xs" onClick={() => markReservation(r.id, "no_show")} disabled={busy === r.id}>No vino</Button>}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </Card>
+            )}
+
+            {hasCitas && (
             <Card title="Historial de citas" hint={c.appointments.length === 0 ? undefined : `${c.appointments.length} en total`}>
               {c.appointments.length === 0 ? (
                 <p className="text-sm text-slate-500">Todavía no tiene citas.</p>
@@ -162,6 +264,7 @@ export function CustomerDetailView({ id }: { id: string }) {
                 </ul>
               )}
             </Card>
+            )}
 
             {c.possibleSame.length > 0 && (
               <Card title="¿Es la misma persona?" hint="Por su nombre o teléfono, parece haber escrito también por otro medio.">
@@ -205,6 +308,8 @@ function EditForm({
   onSaved: () => Promise<void>;
   onMerge: (keepId: string, mergeId: string, name: string) => Promise<void>;
 }) {
+  const panel = usePanel();
+  const restaurant = panel.modules.includes("restaurante") && !panel.modules.includes("citas");
   const [f, setF] = useState({
     displayName: c.displayName ?? "",
     phone: c.phone ?? "",
@@ -253,7 +358,7 @@ function EditForm({
       </label>
       <label className="block space-y-1 text-sm font-medium text-slate-700">
         Etiquetas <span className="font-normal text-slate-400">(separadas por coma)</span>
-        <input className={field} value={f.tags} onChange={set("tags")} disabled={!editable} placeholder="vip, ortodoncia" />
+        <input className={field} value={f.tags} onChange={set("tags")} disabled={!editable} placeholder={restaurant ? "vip, cumpleañero" : "vip, ortodoncia"} />
       </label>
       <label className="block space-y-1 text-sm font-medium text-slate-700">
         Notas internas <span className="font-normal text-slate-400">(solo las ve tu equipo; el asistente no las lee)</span>

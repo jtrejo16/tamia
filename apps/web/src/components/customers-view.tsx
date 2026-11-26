@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { api, makeFormatters, usePolling } from "@/lib/client";
 import type { Serialized } from "@/lib/types";
-import { ChannelBadges, SegmentBadge, dateFormatter, percent, prettyPhone } from "./customer-ui";
+import { ChannelBadges, SegmentBadge, dateFormatter, money, percent, prettyPhone } from "./customer-ui";
 import { canAct, usePanel } from "./panel-context";
 import { Alert, Avatar, Badge, Button, EmptyState, Spinner, cx } from "./ui";
 
@@ -37,6 +37,8 @@ function Stat({ label, value, hint, tone }: { label: string; value: string | num
 
 export function CustomersView() {
   const panel = usePanel();
+  /** Restaurante (sin agenda de citas): visitas = pedidos entregados y reservaciones completadas. */
+  const restaurant = panel.modules.includes("restaurante") && !panel.modules.includes("citas");
   const date = useMemo(() => dateFormatter(panel.timezone), [panel.timezone]);
   const [tab, setTab] = useState<Tab>("todos");
   const [input, setInput] = useState("");
@@ -65,7 +67,9 @@ export function CustomersView() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-lg font-semibold text-slate-900">Clientes</h1>
-            <p className="text-sm text-slate-500">Quiénes son, cuándo vinieron y si han vuelto.</p>
+            <p className="text-sm text-slate-500">
+              {restaurant ? "Quiénes son, qué piden, cuándo fue su último pedido o reservación y si han vuelto." : "Quiénes son, cuándo vinieron y si han vuelto."}
+            </p>
           </div>
           {canAct(panel.role) && <Button onClick={() => setNewOpen(true)} className="py-1.5">+ Nuevo cliente</Button>}
         </div>
@@ -75,14 +79,19 @@ export function CustomersView() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <Stat label="Clientes" value={s.total} />
             <Stat label="Nuevos (30 días)" value={s.newLast30} hint="Dados de alta en los últimos 30 días." />
-            <Stat label="Recurrentes" value={s.recurring} hint="Ya vinieron 2 o más veces y no están en riesgo." />
-            <Stat label="Han vuelto" value={percent(s.returnRate)} hint="De quienes ya vinieron al menos una vez, cuántos volvieron a venir." />
-            <Stat label="No asisten" value={percent(s.noShowRate)} hint="Inasistencias entre citas realizadas e inasistencias." tone={s.noShowRate !== null && s.noShowRate >= 0.2 ? "rose" : undefined} />
-            <Stat label="En riesgo" value={s.atRisk} hint="Más de 60 días sin venir y sin cita próxima." tone={s.atRisk > 0 ? "amber" : undefined} />
+            <Stat label="Recurrentes" value={s.recurring} hint={restaurant ? "Ya pidieron o vinieron 2 o más veces y no están en riesgo." : "Ya vinieron 2 o más veces y no están en riesgo."} />
+            <Stat label="Han vuelto" value={percent(s.returnRate)} hint={restaurant ? "De quienes ya pidieron o vinieron al menos una vez, cuántos volvieron." : "De quienes ya vinieron al menos una vez, cuántos volvieron a venir."} />
+            <Stat
+              label={restaurant ? "No llegan" : "No asisten"}
+              value={percent(s.noShowRate)}
+              hint={restaurant ? "Reservaciones en las que no llegaron, entre las completadas y las que no llegaron." : "Inasistencias entre citas realizadas e inasistencias."}
+              tone={s.noShowRate !== null && s.noShowRate >= 0.2 ? "rose" : undefined}
+            />
+            <Stat label="En riesgo" value={s.atRisk} hint={restaurant ? "Más de 30 días sin pedir ni venir y nada en curso." : "Más de 60 días sin venir y sin cita próxima."} tone={s.atRisk > 0 ? "amber" : undefined} />
           </div>
         )}
 
-        {toClose.length > 0 && tab !== "porcerrar" && (
+        {!restaurant && toClose.length > 0 && tab !== "porcerrar" && (
           <button
             onClick={() => setTab("porcerrar")}
             className="flex w-full items-center justify-between gap-3 rounded-xl bg-amber-50 px-4 py-2.5 text-left text-sm text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100"
@@ -95,7 +104,7 @@ export function CustomersView() {
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          {TABS.map((t) => (
+          {TABS.filter((t) => !(restaurant && t.id === "porcerrar")).map((t) => (
             <button
               key={t.id}
               onClick={() => {
@@ -107,7 +116,7 @@ export function CustomersView() {
                 tab === t.id ? "bg-teal-700 text-white ring-teal-700" : "bg-white text-slate-700 ring-slate-300 hover:bg-slate-50",
               )}
             >
-              {t.label}
+              {restaurant && t.id === "inasistencias" ? "No llegaron" : t.label}
               {t.id === "porcerrar" && toClose.length > 0 && <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 text-xs text-white">{toClose.length}</span>}
             </button>
           ))}
@@ -150,16 +159,33 @@ export function CustomersView() {
                           </div>
                         </div>
                         <div className="w-28 shrink-0 text-sm">
-                          <p className="text-xs text-slate-400">Última visita</p>
+                          <p className="text-xs text-slate-400">{restaurant ? "Último pedido o visita" : "Última visita"}</p>
                           <p className="text-slate-700">{date(c.lastVisitAt)}</p>
                         </div>
-                        <div className="w-16 shrink-0 text-sm">
-                          <p className="text-xs text-slate-400">Visitas</p>
-                          <p className="font-semibold tabular-nums text-slate-900">{c.visits}</p>
-                        </div>
+                        {restaurant ? (
+                          <>
+                            <div className="w-16 shrink-0 text-sm">
+                              <p className="text-xs text-slate-400">Pedidos</p>
+                              <p className="font-semibold tabular-nums text-slate-900">{c.orders}</p>
+                            </div>
+                            <div className="w-16 shrink-0 text-sm">
+                              <p className="text-xs text-slate-400">Reserv.</p>
+                              <p className="font-semibold tabular-nums text-slate-900">{c.reservations}</p>
+                            </div>
+                            <div className="w-20 shrink-0 text-sm">
+                              <p className="text-xs text-slate-400">Gastado</p>
+                              <p className="font-semibold tabular-nums text-slate-900">{c.spendCents > 0 ? money(c.spendCents) : "—"}</p>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="w-16 shrink-0 text-sm">
+                            <p className="text-xs text-slate-400">Visitas</p>
+                            <p className="font-semibold tabular-nums text-slate-900">{c.visits}</p>
+                          </div>
+                        )}
                         <div className="flex w-36 shrink-0 flex-col items-start gap-1">
-                          <SegmentBadge segment={c.segment} />
-                          {c.frequentNoShow && <Badge tone="rose" className="max-w-full">Falla seguido ({c.noShows})</Badge>}
+                          <SegmentBadge segment={c.segment} restaurant={restaurant} />
+                          {c.frequentNoShow && <Badge tone="rose" className="max-w-full">{restaurant ? "No llega seguido" : "Falla seguido"} ({c.noShows})</Badge>}
                           {c.unclosed > 0 && <Badge tone="amber">Por cerrar</Badge>}
                           {c.optedOut && <Badge tone="slate">No contactar</Badge>}
                         </div>
@@ -179,7 +205,9 @@ export function CustomersView() {
           </>
         )}
         <p className="text-xs text-slate-400">
-          Las estadísticas cuentan como «vino» las citas marcadas como completadas. En riesgo = más de 60 días sin venir; perdido = más de 120.
+          {restaurant
+            ? "Cuenta como visita cada pedido entregado y cada reservación completada (márcalos en Pedidos y Reservaciones). En riesgo = más de 30 días sin pedir ni venir; perdido = más de 60."
+            : "Las estadísticas cuentan como «vino» las citas marcadas como completadas. En riesgo = más de 60 días sin venir; perdido = más de 120."}
         </p>
       </div>
     </div>

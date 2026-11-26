@@ -50,6 +50,48 @@ const business = {
   humanHours: { mon: ["09:00", "18:00"], tue: ["09:00", "18:00"], sun: null },
 };
 
+/** Un restaurante (sin el modulo de citas). */
+async function restaurantWorld() {
+  const w = await world();
+  await dbs.owner.db.update(tenants).set({ vertical: "taqueria", profile: {} }).where(eq(tenants.id, w.tenantId));
+  return w;
+}
+
+describe("horarios que cruzan la medianoche", () => {
+  // El horario de una taqueria nocturna: lunes a viernes 17:00 a 01:00, sabado 16:00 a 01:00 y domingo 13:00 a medianoche.
+  const night = [
+    ...[1, 2, 3, 4, 5].map((weekday) => ({ weekday, opens: "17:00", closes: "01:00" })),
+    { weekday: 6, opens: "16:00", closes: "01:00" },
+    { weekday: 0, opens: "13:00", closes: "00:00" },
+  ];
+
+  it("un restaurante guarda su horario nocturno tal cual", async () => {
+    const w = await restaurantWorld();
+    expect(await setHours(dbs.app.db, w.owner, { staffId: null, windows: night })).toEqual({ ok: true });
+    const rows = await dbs.owner.db.select().from(businessHours).where(eq(businessHours.tenantId, w.tenantId));
+    expect(rows).toHaveLength(7);
+    expect(rows.find((r) => r.weekday === 1)).toMatchObject({ opens: "17:00:00", closes: "01:00:00" });
+    expect(rows.find((r) => r.weekday === 0)).toMatchObject({ opens: "13:00:00", closes: "00:00:00" });
+  });
+
+  it("un negocio con agenda de citas no puede (la agenda no entiende turnos que cruzan la medianoche) y no pierde su horario", async () => {
+    const w = await world();
+    expect(await setHours(dbs.app.db, w.owner, { staffId: null, windows: [{ weekday: 2, opens: "09:00", closes: "19:00" }] })).toEqual({ ok: true });
+    const r = await setHours(dbs.app.db, w.owner, { staffId: null, windows: night });
+    expect(r).toMatchObject({ ok: false, error: "invalid", details: [expect.stringContaining("sin agenda de citas")] });
+    expect(await dbs.owner.db.select().from(businessHours).where(eq(businessHours.tenantId, w.tenantId))).toHaveLength(1);
+  });
+
+  it("abrir y cerrar a la misma hora sigue siendo invalido, y los empalmes se detectan (tambien con turnos nocturnos)", async () => {
+    const w = await restaurantWorld();
+    const bad = async (windows: unknown[]) => expect(await setHours(dbs.app.db, w.owner, { staffId: null, windows })).toMatchObject({ ok: false, error: "invalid" });
+    await bad([{ weekday: 2, opens: "09:00", closes: "09:00" }]);
+    await bad([{ weekday: 2, opens: "09:00", closes: "15:00" }, { weekday: 2, opens: "14:00", closes: "19:00" }]);
+    await bad([{ weekday: 2, opens: "18:00", closes: "02:00" }, { weekday: 2, opens: "20:00", closes: "23:00" }]); // el turno nocturno ya ocupa el resto del dia
+    expect(await setHours(dbs.app.db, w.owner, { staffId: null, windows: [{ weekday: 2, opens: "09:00", closes: "12:00" }, { weekday: 2, opens: "18:00", closes: "02:00" }] })).toEqual({ ok: true });
+  });
+});
+
 describe("negocio", () => {
   it("el dueño lo actualiza y el cambio queda en el perfil y en la bitácora", async () => {
     const w = await world();

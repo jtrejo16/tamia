@@ -27,6 +27,18 @@ Todo se calcula al consultar, sin tablas aparte (`packages/inbox/src/customers.t
 - Los días de «en riesgo» y «perdido» son fijos (`RISK_DAYS`, `LOST_DAYS`). Si más adelante se quieren configurables por negocio, se guardan en el perfil del negocio.
 - La lista carga hasta 200 clientes por consulta y calcula las cifras de la cabecera sobre todos los que cumplen la búsqueda.
 
+## Restaurantes: pedidos y reservaciones
+
+En un negocio con el módulo de restaurante **y sin el de citas**, Clientes habla de pedidos y reservaciones en lugar de citas. Las mismas cifras sirven para citas, restaurantes o ambos: cada fuente que el negocio no usa aporta cero.
+
+- **Visita** = un pedido **entregado** o una reservación **completada** (además de una cita realizada, si el negocio también la usa). Si el equipo no marca los pedidos como entregados ni cierra las reservaciones, las cifras salen bajas: se marcan en *Pedidos* y *Reservaciones* (o desde la ficha del cliente: «Vino» / «No vino»).
+- **No llega** = reservación en «no llegó». «No llega seguido» = 2 o más.
+- **En curso** = pedidos en proceso (de las últimas 24 horas) y reservaciones próximas; mientras haya algo en curso el cliente nunca es «en riesgo» ni «perdido».
+- **Plazos más cortos:** *en riesgo* = más de **30** días sin pedir ni venir; *perdido* = más de **60** (un restaurante se enfría antes que una clínica). Con citas, o con los dos módulos, siguen siendo 60 y 120 (`limitsFor` en `customers.ts`).
+- **Lista:** en vez de «Visitas» muestra **Pedidos**, **Reservaciones** y **Gastado** (suma de sus pedidos entregados, dato real, no estimado), y la fecha de su último pedido o visita. La pestaña «Con inasistencias» pasa a «No llegaron» y desaparece «Por cerrar» (las reservaciones por cerrar se ven en *Reservaciones*).
+- **Ficha:** resumen con pedidos, gastado, **ticket promedio**, reservaciones, platillo favorito (el que más ha pedido), no llegó, canceló, en curso, primera y última visita y cada cuántos días viene; **Historial de pedidos** (con lo que pidió, si fue a domicilio o para recoger, el total y el estado) e **Historial de reservaciones** (personas, notas y estado, con «Vino» / «No vino» para las pasadas sin cerrar). Se muestran los 50 más recientes de cada uno; las cifras cuentan todos.
+- Al **unir dos clientes duplicados** se juntan también sus pedidos y reservaciones.
+
 ## Reglas al editar
 
 - Los cambios los hacen el dueño y la recepción; el rol de solo lectura puede ver.

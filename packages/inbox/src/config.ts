@@ -14,6 +14,7 @@ import {
   type Tx,
 } from "@empleado/db";
 import { MODEL_TIERS, assertApprovedModel, type ModelTier } from "@empleado/llm";
+import { hasModule, modulesFor } from "@empleado/shared";
 import { and, asc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { listTemplates, type TemplateView } from "./templates";
@@ -113,13 +114,17 @@ export const hoursSchema = z
   })
   .superRefine((v, ctx) => {
     v.windows.forEach((w, i) => {
-      if (w.closes <= w.opens) ctx.addIssue({ code: "custom", message: "La hora de cierre debe ser después de la de apertura", path: ["windows", i] });
+      // Cerrar a una hora menor que la de abrir significa cerrar DESPUES de la medianoche (por ejemplo de 18:00 a 02:00); setHours
+      // decide si el negocio lo puede usar. Abrir y cerrar a la misma hora no tiene sentido.
+      if (w.closes === w.opens) ctx.addIssue({ code: "custom", message: "La hora de cierre no puede ser igual a la de apertura", path: ["windows", i] });
     });
     const sorted = [...v.windows].sort((a, b) => a.weekday - b.weekday || a.opens.localeCompare(b.opens));
     for (let i = 1; i < sorted.length; i++) {
       const prev = sorted[i - 1]!;
       const cur = sorted[i]!;
-      if (prev.weekday === cur.weekday && cur.opens < prev.closes) {
+      // Un turno que cruza la medianoche ocupa el resto de su dia (hasta las 24:00) para detectar empalmes.
+      const prevEnd = prev.closes < prev.opens ? "24:00" : prev.closes;
+      if (prev.weekday === cur.weekday && cur.opens < prevEnd) {
         ctx.addIssue({ code: "custom", message: "Hay horarios encimados en el mismo día", path: ["windows"] });
       }
     }
@@ -455,6 +460,14 @@ export async function setHours(db: Database, ctx: PanelContext, input: unknown):
   const { staffId, windows } = v.data;
 
   return withTenant(db, scopeOf(ctx), async (tx) => {
+    // Un horario que cierra despues de la medianoche lo entienden los pedidos y las reservaciones del restaurante, pero no la
+    // agenda de citas: solo se acepta en negocios sin ese modulo.
+    if (windows.some((w) => w.closes < w.opens)) {
+      const [t] = await tx.select({ vertical: tenants.vertical, profile: tenants.profile }).from(tenants).where(eq(tenants.id, ctx.tenantId));
+      if (hasModule(modulesFor(t?.vertical, t?.profile?.modules), "citas")) {
+        return { ok: false as const, error: "invalid" as const, details: ["Un horario que cierra después de la medianoche solo se puede usar en negocios sin agenda de citas (por ejemplo, un restaurante). Cierra a las 23:59 o parte el horario en dos días."] };
+      }
+    }
     if (staffId) {
       const [member] = await tx.select({ id: staff.id }).from(staff).where(eq(staff.id, staffId));
       if (!member) return fail("not_found" as const);
